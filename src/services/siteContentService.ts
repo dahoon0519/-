@@ -2,6 +2,7 @@ import { SiteContent, ContactInquiry, ContentVersion, Language, CoffeeSectionCon
 import { defaultSiteContent } from '../data/defaultSiteContent';
 import { initialCoffeeContentJa, initialCoffeeContentKo, initialCoffeeContentEn } from '../data/initialData';
 import { authService, ALLOWED_ADMIN_EMAIL } from './authService';
+import { apiClient } from './apiClient';
 
 const PUBLISHED_KEY = 'dahoon_site_content_main';
 const DRAFT_KEY = 'dahoon_site_content_draft';
@@ -179,25 +180,24 @@ export function getPublicationMetadata(): PublicationMetadata {
 
 /**
  * Loads published site content for public visitors and admin base.
- * Never leaks drafts to public visitors.
+ * Fetches from the backend API, with graceful fallback to cached/default data.
  */
 export async function loadPublishedContent(): Promise<SiteContent> {
   try {
-    const win = window as any;
-    if (win.__firestore_db && win.firebase) {
+    const res = await apiClient.get<{ published?: any }>('/api/content/published');
+    if (res && res.published) {
+      const merged = mergeWithDefaults(res.published);
+      const migrated = migrateLegacyCoffeeToSiteContent(merged);
       try {
-        const docRef = win.firebase.firestore().doc(FIRESTORE_PATH);
-        const docSnap = await docRef.get();
-        if (docSnap && docSnap.exists) {
-          const data = docSnap.data() as Partial<SiteContent>;
-          const merged = mergeWithDefaults(data);
-          return migrateLegacyCoffeeToSiteContent(merged);
-        }
-      } catch (err) {
-        console.warn('Firestore load skipped or offline:', err);
-      }
+        localStorage.setItem(PUBLISHED_KEY, JSON.stringify(migrated));
+      } catch {}
+      return migrated;
     }
+  } catch (err) {
+    console.warn('Backend loadPublishedContent fetch skipped or offline, checking local cache:', err);
+  }
 
+  try {
     const saved = localStorage.getItem(PUBLISHED_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
@@ -205,7 +205,7 @@ export async function loadPublishedContent(): Promise<SiteContent> {
       return migrateLegacyCoffeeToSiteContent(merged);
     }
   } catch (e) {
-    console.error('Error loading published content:', e);
+    console.error('Error loading published content from local storage:', e);
   }
 
   return migrateLegacyCoffeeToSiteContent(defaultSiteContent);
@@ -228,18 +228,19 @@ export async function loadDraftContent(): Promise<SiteContent | null> {
   }
 
   try {
-    const win = window as any;
-    if (win.__firestore_db && win.firebase) {
+    const res = await apiClient.get<{ draft?: any }>('/api/content/draft');
+    if (res && res.draft) {
+      const merged = mergeWithDefaults(res.draft);
       try {
-        const docRef = win.firebase.firestore().doc(FIRESTORE_DRAFT_PATH);
-        const docSnap = await docRef.get();
-        if (docSnap && docSnap.exists) {
-          const data = docSnap.data() as Partial<SiteContent>;
-          return mergeWithDefaults(data);
-        }
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(merged));
       } catch {}
+      return merged;
     }
+  } catch (err) {
+    console.warn('Backend loadDraftContent error, checking local storage:', err);
+  }
 
+  try {
     const saved = localStorage.getItem(DRAFT_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
@@ -253,7 +254,7 @@ export async function loadDraftContent(): Promise<SiteContent | null> {
 }
 
 /**
- * Saves draft content. Enforces administrator authorization and input validation.
+ * Saves draft content. Enforces administrator authorization and input validation on server.
  * Does NOT affect the public visitors' view.
  */
 export async function saveDraftContent(content: SiteContent): Promise<SiteContent> {
@@ -271,22 +272,19 @@ export async function saveDraftContent(content: SiteContent): Promise<SiteConten
     updatedAt: new Date().toISOString(),
   };
 
+  // 1. Submit to server-authoritative endpoint
+  try {
+    await apiClient.post('/api/content/draft', { content: draft });
+  } catch (err: any) {
+    console.warn('Server draft save warning (falling back to local cache):', err.message);
+  }
+
+  // 2. Cache in local storage for offline safety
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
     localStorage.setItem('dahoon_last_draft_time', new Date().toISOString());
-
-    const win = window as any;
-    if (win.__firestore_db && win.firebase) {
-      try {
-        const docRef = win.firebase.firestore().doc(FIRESTORE_DRAFT_PATH);
-        await docRef.set(draft, { merge: true });
-      } catch (err) {
-        console.warn('Firestore draft save warning:', err);
-      }
-    }
   } catch (e) {
-    console.error('Error saving draft:', e);
-    throw e;
+    console.error('Error saving draft locally:', e);
   }
 
   return draft;
@@ -301,24 +299,21 @@ export async function discardDraftContent(): Promise<void> {
   }
 
   try {
-    localStorage.removeItem(DRAFT_KEY);
+    await apiClient.delete('/api/content/draft');
+  } catch (err: any) {
+    console.warn('Server discard draft warning:', err.message);
+  }
 
-    const win = window as any;
-    if (win.__firestore_db && win.firebase) {
-      try {
-        const docRef = win.firebase.firestore().doc(FIRESTORE_DRAFT_PATH);
-        await docRef.delete();
-      } catch {}
-    }
+  try {
+    localStorage.removeItem(DRAFT_KEY);
   } catch (e) {
-    console.error('Error discarding draft:', e);
-    throw e;
+    console.error('Error discarding draft locally:', e);
   }
 }
 
 /**
  * Publishes content to the live site.
- * Enforces authorization, creates a historical version snapshot, and cleans up draft.
+ * Enforces authorization on server, creates a historical version snapshot, and cleans up draft.
  */
 export async function publishContent(content: SiteContent, summary?: string): Promise<SiteContent> {
   if (!authService.isAuthorizedAdmin()) {
@@ -336,16 +331,20 @@ export async function publishContent(content: SiteContent, summary?: string): Pr
     updatedAt: now,
   };
 
+  // 1. Publish to backend server
   try {
-    // 1. Save published to live storage
+    await apiClient.post('/api/content/publish', { content: published, summary });
+  } catch (err: any) {
+    console.warn('Server publish warning:', err.message);
+  }
+
+  // 2. Mirror into local storage cache
+  try {
     localStorage.setItem(PUBLISHED_KEY, JSON.stringify(published));
     localStorage.setItem('dahoon_last_publish_time', now);
-
-    // 2. Clear draft now that it's published
     localStorage.removeItem(DRAFT_KEY);
     localStorage.removeItem('dahoon_last_draft_time');
 
-    // 3. Save to version history (keep last 15 versions)
     const history = getVersionHistory();
     const newVersion: ContentVersion = {
       id: `ver-${Date.now()}`,
@@ -357,22 +356,8 @@ export async function publishContent(content: SiteContent, summary?: string): Pr
     };
     const updatedHistory = [newVersion, ...history].slice(0, 15);
     localStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
-
-    // 4. Also write to Firestore if available
-    const win = window as any;
-    if (win.__firestore_db && win.firebase) {
-      try {
-        const docRef = win.firebase.firestore().doc(FIRESTORE_PATH);
-        await docRef.set(published, { merge: true });
-        const draftRef = win.firebase.firestore().doc(FIRESTORE_DRAFT_PATH);
-        await draftRef.delete();
-      } catch (err) {
-        console.warn('Firestore publish warning:', err);
-      }
-    }
   } catch (e) {
-    console.error('Error publishing site content:', e);
-    throw e;
+    console.error('Error publishing site content locally:', e);
   }
 
   syncLegacyCoffeeStorage(published.coffee);
@@ -433,6 +418,17 @@ export async function restoreContentVersion(versionId: string): Promise<SiteCont
     throw new Error('권한 오류: 관리자만 버전을 복원할 수 있습니다.');
   }
 
+  try {
+    const res = await apiClient.post<{ success: boolean; restored: SiteContent }>('/api/content/restore', { versionId });
+    if (res && res.restored) {
+      const merged = mergeWithDefaults(res.restored);
+      localStorage.setItem(PUBLISHED_KEY, JSON.stringify(merged));
+      return merged;
+    }
+  } catch (err: any) {
+    console.warn('Server restore version warning:', err.message);
+  }
+
   const history = getVersionHistory();
   const target = history.find((v) => v.id === versionId);
   if (!target) {
@@ -440,7 +436,6 @@ export async function restoreContentVersion(versionId: string): Promise<SiteCont
   }
 
   const restoredContent = mergeWithDefaults(target.content);
-  // Publish the restored content
   return await publishContent(restoredContent, `버전 v${target.versionNumber}에서 복원됨 (${new Date().toLocaleString()})`);
 }
 
@@ -483,12 +478,17 @@ export function saveContactInquiry(inquiry: Omit<ContactInquiry, 'id' | 'created
     createdAt: new Date().toISOString(),
   };
 
+  // Submit to server endpoint
+  apiClient.post('/api/inquiries', inquiry).catch((err) => {
+    console.warn('Failed to submit inquiry to server:', err);
+  });
+
   try {
     const existing = getContactInquiries();
     const updated = [newInquiry, ...existing];
     localStorage.setItem(INQUIRIES_KEY, JSON.stringify(updated));
   } catch (e) {
-    console.error('Error saving inquiry:', e);
+    console.error('Error saving inquiry locally:', e);
   }
 
   return newInquiry;
@@ -513,6 +513,11 @@ export function clearContactInquiries(): void {
   if (!authService.isAuthorizedAdmin()) {
     throw new Error('권한 오류: 관리자만 문의 목록을 삭제할 수 있습니다.');
   }
+
+  apiClient.delete('/api/inquiries').catch((err) => {
+    console.warn('Failed to clear inquiries on server:', err);
+  });
+
   try {
     localStorage.removeItem(INQUIRIES_KEY);
   } catch {}

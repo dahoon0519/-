@@ -45,7 +45,6 @@ import {
   authService,
   ALLOWED_ADMIN_EMAIL,
   AdminUser,
-  PendingEmailChange,
 } from '../services/authService';
 import {
   restoreCoffeeFromBackup,
@@ -151,9 +150,75 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [passwordError, setPasswordError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [googleError, setGoogleError] = useState('');
-  const [showOtherEmailInput, setShowOtherEmailInput] = useState(false);
-  const [otherEmailInput, setOtherEmailInput] = useState('');
-  const [showPasswordFallback, setShowPasswordFallback] = useState(false);
+  const [idTokenInput, setIdTokenInput] = useState('');
+  const [showTokenVerifier, setShowTokenVerifier] = useState(false);
+  const googleBtnRef = React.useRef<HTMLDivElement>(null);
+  const googleClientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
+
+  // Render Google Identity Services button if script & client ID are available
+  useEffect(() => {
+    if (!isOpen || isAdmin) return;
+
+    const timer = setTimeout(() => {
+      const win = window as any;
+      if (win.google?.accounts?.id && googleClientId && googleBtnRef.current) {
+        try {
+          win.google.accounts.id.initialize({
+            client_id: googleClientId,
+            callback: async (response: { credential: string }) => {
+              if (response.credential) {
+                await handleCredentialLogin(response.credential);
+              }
+            },
+            auto_select: false,
+          });
+
+          if (googleBtnRef.current) {
+            googleBtnRef.current.innerHTML = '';
+            win.google.accounts.id.renderButton(googleBtnRef.current, {
+              theme: 'outline',
+              size: 'large',
+              width: 300,
+              text: 'signin_with',
+              shape: 'rectangular',
+            });
+          }
+        } catch (err) {
+          console.warn('Google Identity Services render error:', err);
+        }
+      }
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, isAdmin, googleClientId]);
+
+  const handleCredentialLogin = async (credential: string) => {
+    setIsLoggingIn(true);
+    setGoogleError('');
+    try {
+      const user = await authService.signInWithGoogleCredential(credential);
+      onLogin(user);
+      showNotify(
+        currentLang === 'ja'
+          ? `Google管理者（${user.email}）としてサーバー認証されました`
+          : currentLang === 'ko'
+          ? `Google 관리자（${user.email}）로 서버 인증 완료되었습니다`
+          : `Authenticated as Admin (${user.email})`
+      );
+    } catch (err: any) {
+      setGoogleError(
+        err.message ||
+          (currentLang === 'ja'
+            ? '認証に失敗しました'
+            : currentLang === 'ko'
+            ? '인증에 실패했습니다'
+            : 'Authentication failed')
+      );
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
   const [activeTab, setActiveTab] = useState<
     | 'home'
     | 'categories'
@@ -169,17 +234,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [notification, setNotification] = useState<string | null>(null);
   const [isRestoringSnapshot, setIsRestoringSnapshot] = useState(false);
   const [snapshotResult, setSnapshotResult] = useState<string | null>(null);
-
-  // Administrator email management state (Method A)
-  const [newAdminEmailInput, setNewAdminEmailInput] = useState('');
-  const [confirmNewEmailInput, setConfirmNewEmailInput] = useState('');
-  const [emailChangeError, setEmailChangeError] = useState('');
-  const [emailChangeSuccess, setEmailChangeSuccess] = useState('');
-  const [verificationCodeInput, setVerificationCodeInput] = useState('');
-  const [pendingEmailChange, setPendingEmailChange] = useState<PendingEmailChange | null>(() =>
-    authService.getPendingEmailChange()
-  );
-  const [isProcessingEmailChange, setIsProcessingEmailChange] = useState(false);
 
   const t = (ja: string, ko: string, en: string) =>
     currentLang === 'ja' ? ja : currentLang === 'ko' ? ko : en;
@@ -221,222 +275,18 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setFoodOverviewForm(foodOverview);
   }, [foodOverview]);
 
-  if (!isOpen) return null;
-
   const showNotify = (msg: string) => {
     setNotification(msg);
     setTimeout(() => setNotification(null), 2500);
   };
 
-  const handleGoogleSignIn = async (emailToUse?: string) => {
-    const targetEmail = emailToUse || authService.getAllowedAdminEmail();
-    setIsLoggingIn(true);
-    setGoogleError('');
-    try {
-      const user = await authService.signInWithGoogleAccount(targetEmail);
-      onLogin(user);
-      showNotify(
-        currentLang === 'ja'
-          ? `Google管理者（${user.email}）として認証されました`
-          : currentLang === 'ko'
-          ? `Google 관리자（${user.email}）로 로그인되었습니다`
-          : `Authenticated as Admin (${user.email})`
-      );
-    } catch (err: any) {
-      setGoogleError(
-        err.message ||
-          (currentLang === 'ja'
-            ? 'ログインに失敗しました'
-            : currentLang === 'ko'
-            ? '로그인에 실패했습니다'
-            : 'Authentication failed')
-      );
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  const handleInitiateEmailChange = (e: React.FormEvent) => {
+  const handleVerifyIdTokenSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setEmailChangeError('');
-    setEmailChangeSuccess('');
-    const cleanNew = newAdminEmailInput.trim().toLowerCase();
-    const cleanConfirm = confirmNewEmailInput.trim().toLowerCase();
-
-    if (!cleanNew) {
-      setEmailChangeError(
-        t(
-          '新しい管理者メールアドレスを入力してください。',
-          '새 관리자 이메일 주소를 입력해주세요.',
-          'Please enter a new administrator email address.'
-        )
-      );
-      return;
-    }
-
-    if (cleanNew !== cleanConfirm) {
-      setEmailChangeError(
-        t(
-          '確認用に入力されたメールアドレスが一致しません。',
-          '확인용으로 입력된 이메일 주소가 일치하지 않습니다.',
-          'Confirmation email address does not match.'
-        )
-      );
-      return;
-    }
-
-    try {
-      const initiated = authService.initiateAdminEmailChange(cleanNew);
-      setPendingEmailChange(authService.getPendingEmailChange());
-      setVerificationCodeInput('');
-      setEmailChangeSuccess(
-        t(
-          `セキュリティ確認コード（${initiated.verificationCode}）を発行しました。下の入力欄に入力して変更を確定してください（有効期限: 10分）。`,
-          `보안 인증 코드（${initiated.verificationCode}）가 발급되었습니다. 아래 확인란에 입력하여 변경을 확정해주세요 (유효시간: 10분).`,
-          `Security verification code generated (${initiated.verificationCode}). Enter it below to confirm (expires in 10 minutes).`
-        )
-      );
-    } catch (err: any) {
-      setEmailChangeError(
-        err.message ||
-          t('変更リクエストの作成に失敗しました', '변경 요청 생성 실패', 'Failed to initiate email change')
-      );
-    }
+    if (!idTokenInput.trim()) return;
+    await handleCredentialLogin(idTokenInput.trim());
   };
 
-  const handleConfirmEmailChange = (e: React.FormEvent) => {
-    e.preventDefault();
-    setEmailChangeError('');
-    setEmailChangeSuccess('');
-
-    if (!verificationCodeInput.trim()) {
-      setEmailChangeError(
-        t(
-          '6桁の確認コードを入力してください。',
-          '6자리 확인 코드를 입력해주세요.',
-          'Please enter the 6-digit verification code.'
-        )
-      );
-      return;
-    }
-
-    setIsProcessingEmailChange(true);
-    try {
-      const result = authService.confirmAdminEmailChange(verificationCodeInput.trim());
-      setPendingEmailChange(null);
-      setNewAdminEmailInput('');
-      setConfirmNewEmailInput('');
-      setVerificationCodeInput('');
-      const updatedAdmin = authService.getCurrentAdmin();
-      if (updatedAdmin) {
-        onLogin(updatedAdmin);
-      }
-      showNotify(
-        t(
-          `管理者メールが ${result.newEmail} に更新されました`,
-          `관리자 이메일이 ${result.newEmail}로 성공적으로 변경되었습니다`,
-          `Administrator email updated to ${result.newEmail}`
-        )
-      );
-      setEmailChangeSuccess(
-        t(
-          `管理者メールアドレスが正常に変更されました（${result.newEmail}）。現在の管理セッションは安全に維持されています。`,
-          `관리자 이메일 주소가 성공적으로 변경되었습니다（${result.newEmail}）。현재 로그인 세션이 안전하게 유지됩니다.`,
-          `Administrator email successfully updated to ${result.newEmail}. Your current admin session remains active.`
-        )
-      );
-    } catch (err: any) {
-      setEmailChangeError(
-        err.message ||
-          t('確認コードの検証に失敗しました', '인증 코드 검증 실패', 'Failed to confirm verification code')
-      );
-    } finally {
-      setIsProcessingEmailChange(false);
-    }
-  };
-
-  const handleCancelEmailChange = () => {
-    authService.cancelPendingEmailChange();
-    setPendingEmailChange(null);
-    setVerificationCodeInput('');
-    setEmailChangeError('');
-    setEmailChangeSuccess(
-      t(
-        '変更申請をキャンセルしました。現在の管理者メールがそのまま維持されます。',
-        '변경 신청을 취소했습니다. 현재 관리자 이메일이 그대로 유지됩니다.',
-        'Email change cancelled. The current administrator email remains active.'
-      )
-    );
-  };
-
-  const handleResetEmailToDefault = () => {
-    const configured = authService.getConfiguredDefaultEmail();
-    const confirmed = window.confirm(
-      t(
-        `管理者メールアドレスを環境設定・デフォルト（${configured}）に戻しますか？`,
-        `관리자 이메일 주소를 환경 설정/기본값（${configured}）으로 되돌리시겠습니까?`,
-        `Reset administrator email to configured default (${configured})?`
-      )
-    );
-    if (!confirmed) return;
-
-    try {
-      authService.resetAdminEmailToDefault();
-      setPendingEmailChange(null);
-      setNewAdminEmailInput('');
-      setConfirmNewEmailInput('');
-      setVerificationCodeInput('');
-      const updatedAdmin = authService.getCurrentAdmin();
-      if (updatedAdmin) {
-        onLogin(updatedAdmin);
-      }
-      showNotify(
-        t(
-          '環境設定デフォルトにリセットしました',
-          '환경 설정 기본값으로 복원되었습니다',
-          'Reset to configured default'
-        )
-      );
-      setEmailChangeSuccess(
-        t(
-          `管理者メールアドレスを環境設定デフォルト（${configured}）に戻しました。`,
-          `관리자 이메일 주소를 환경 설정 기본값（${configured}）으로 되돌렸습니다.`,
-          `Reset administrator email to default configuration (${configured}).`
-        )
-      );
-    } catch (err: any) {
-      setEmailChangeError(
-        err.message ||
-          t('デフォルトへのリセットに失敗しました', '기본값 복원 실패', 'Failed to reset email to default')
-      );
-    }
-  };
-
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const user = await authService.signInWithPassword(passwordInput);
-      setPasswordError('');
-      setPasswordInput('');
-      onLogin(user);
-      showNotify(
-        currentLang === 'ja'
-          ? '管理者としてログインしました'
-          : currentLang === 'ko'
-          ? '관리자로 로그인되었습니다'
-          : 'Logged in as Admin'
-      );
-    } catch (err: any) {
-      setPasswordError(
-        err.message ||
-          t(
-            'パスワードが正しくありません',
-            '비밀번호가 일치하지 않습니다',
-            'Invalid password PIN'
-          )
-      );
-    }
-  };
+  if (!isOpen) return null;
 
   // Hero Upload
   const handleHeroFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -915,141 +765,99 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               </div>
             </div>
 
-            {/* Primary Action: Sign in with Google as Allowed Admin */}
-            <div className="space-y-3">
-              <button
-                type="button"
-                disabled={isLoggingIn}
-                onClick={() => handleGoogleSignIn(authService.getAllowedAdminEmail())}
-                className="w-full py-3 px-4 bg-white hover:bg-[#F9F7F4] text-[#333] border border-[#CBC4B8] hover:border-[#8E8679] rounded-lg cursor-pointer font-medium text-xs sm:text-sm flex items-center justify-center gap-3 shadow-xs transition-all active:scale-[0.99]"
-              >
-                {/* Official Google G SVG */}
-                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                  <path
-                    fill="#4285F4"
-                    d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
-                  />
-                </svg>
-                <span>
-                  {isLoggingIn
-                    ? t('Google 認証中...', 'Google 인증 처리 중...', 'Authenticating...')
-                    : t(
-                        `Googleで管理者ログイン (${authService.getAllowedAdminEmail()})`,
-                        `Google로 관리자 로그인 (${authService.getAllowedAdminEmail()})`,
-                        `Sign in with Google (${authService.getAllowedAdminEmail()})`
-                      )}
-                </span>
-              </button>
+            {/* Primary Action: Google Identity Services (GIS) */}
+            <div className="space-y-3 pt-1">
+              {/* Google Official Button Container rendered by Google Identity Services */}
+              <div className="flex justify-center min-h-[44px]">
+                <div ref={googleBtnRef} className="flex justify-center" />
+              </div>
+
+              {/* Informative helper when Client ID is pending configuration */}
+              {!googleClientId && (
+                <div className="p-3 bg-[#F4EFE6] border border-[#DDD3C4] rounded-lg text-left text-xs text-[#5D5347] space-y-2">
+                  <div className="flex items-center gap-1.5 font-medium text-[#42372A]">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                    <span>{t('Google ログイン設定のご案内', 'Google 로그인 설정 안내', 'Google Sign-In Setup')}</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    {t(
+                      'Google Cloud Consoleで作成したOAuthクライアントIDを環境変数 VITE_GOOGLE_CLIENT_ID に設定すると、公式Googleログインボタンが表示されます。',
+                      'Google Cloud Console에서 발급받은 OAuth 클라이언트 ID를 환경 변수 VITE_GOOGLE_CLIENT_ID에 설정하면 공식 로그인 버튼이 렌더링됩니다.',
+                      'Configure your Google OAuth Web Client ID in VITE_GOOGLE_CLIENT_ID to display the official Google Sign-In button.'
+                    )}
+                  </p>
+                </div>
+              )}
 
               {googleError && (
-                <div className="p-3 rounded bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2 text-left">
+                <div className="p-3 rounded bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2 text-left animate-fadeIn">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{googleError}</span>
+                  <span className="font-medium leading-relaxed">{googleError}</span>
                 </div>
               )}
             </div>
 
-            {/* Test other email toggle */}
+            {/* Google ID Token Tester / Manual Verification (For tests and security audits) */}
             <div className="pt-2 border-t border-[#EAE3D7]">
-              {!showOtherEmailInput ? (
+              {!showTokenVerifier ? (
                 <button
                   type="button"
-                  onClick={() => setShowOtherEmailInput(true)}
+                  onClick={() => setShowTokenVerifier(true)}
                   className="text-[11px] text-[#8C8477] hover:text-[#4A4339] underline cursor-pointer"
                 >
                   {t(
-                    '他のGoogleアカウントで権限検証をテストする',
-                    '다른 Google 계정으로 권한 거부 검증 테스트',
-                    'Test access rejection with other Google account'
+                    'Google ID Token サーバー直接検証テスト (ID Token Tester)',
+                    'Google ID 토큰 서버 직접 검증 테스트 (ID Token Tester)',
+                    'Test Direct Server ID Token Verification'
                   )}
                 </button>
               ) : (
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (otherEmailInput.trim()) {
-                      handleGoogleSignIn(otherEmailInput.trim());
-                    }
-                  }}
-                  className="space-y-2 mt-2 bg-[#F3EDE3] p-3 rounded-md text-left"
-                >
-                  <p className="text-[11px] text-[#6E675D]">
-                    {t(
-                      '※ 許可されていないメールアドレスを入力すると、アクセス拒否エラーが正しく発生することを確認できます。',
-                      '※ 허용되지 않은 이메일을 입력하면 접근 거부 에러가 발생하는지 바로 테스트할 수 있습니다.',
-                      '※ Entering an unauthorized email demonstrates that access rejection works properly.'
-                    )}
-                  </p>
-                  <div className="flex gap-1.5">
-                    <input
-                      type="email"
-                      placeholder="visitor@gmail.com"
-                      value={otherEmailInput}
-                      onChange={(e) => {
-                        setOtherEmailInput(e.target.value);
-                        setGoogleError('');
-                      }}
-                      className="flex-1 text-xs px-2.5 py-1.5 bg-white border border-[#DDD5C8] rounded text-[#222] focus:outline-none focus:border-[#735A46]"
-                    />
+                <form onSubmit={handleVerifyIdTokenSubmit} className="space-y-2.5 mt-2 bg-[#F3EDE3] p-3 rounded-md text-left">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-[#5A4F43]">
+                      {t('Google ID Token サーバー検証', 'Google ID 토큰 서버 검증', 'Server ID Token Verification')}
+                    </span>
                     <button
-                      type="submit"
-                      disabled={isLoggingIn}
-                      className="text-xs px-3 py-1.5 bg-[#665241] hover:bg-[#524133] text-white rounded cursor-pointer whitespace-nowrap"
+                      type="button"
+                      onClick={() => setShowTokenVerifier(false)}
+                      className="text-[10px] text-[#8A8173] hover:text-[#333]"
                     >
-                      {t('テスト実行', '검증 테스트', 'Run Test')}
+                      {t('閉じる', '닫기', 'Close')}
                     </button>
                   </div>
-                </form>
-              )}
-            </div>
-
-            {/* Password Fallback Toggle */}
-            <div className="pt-1">
-              {!showPasswordFallback ? (
-                <button
-                  type="button"
-                  onClick={() => setShowPasswordFallback(true)}
-                  className="text-[11px] text-[#A69E91] hover:text-[#5E564B] cursor-pointer"
-                >
-                  {t(
-                    'または管理者PINでログイン',
-                    '또는 관리자 PIN으로 로그인',
-                    'Or sign in with Admin PIN'
-                  )}
-                </button>
-              ) : (
-                <form onSubmit={handlePasswordSubmit} className="space-y-2 pt-2">
-                  <input
-                    type="password"
-                    placeholder={t('管理者PIN', '관리자 PIN', 'Admin PIN')}
-                    value={passwordInput}
+                  <p className="text-[10px] text-[#71695F] leading-relaxed">
+                    {t(
+                      'Googleが発行した署名付きIDトークン（JWT）を送信し、サーバー側で暗号署名と dahoon0519@gmail.com の一致を厳格に照合します。改ざんされたトークンや別アカウントは即座に拒否されます。',
+                      'Google이 발행한 서명된 ID 토큰(JWT)을 전송하여 서버에서 암호화 서명 및 dahoon0519@gmail.com 일치 여부를 엄격히 검증합니다. 위조 토큰이나 타 계정은 즉시 차단됩니다.',
+                      'Submits a Google ID token to the server to verify signature and email match. Forged tokens or other accounts are rejected.'
+                    )}
+                  </p>
+                  <textarea
+                    rows={2}
+                    placeholder="eyJhbGciOiJSUzI1NiIs..."
+                    value={idTokenInput}
                     onChange={(e) => {
-                      setPasswordInput(e.target.value);
-                      setPasswordError('');
+                      setIdTokenInput(e.target.value);
+                      setGoogleError('');
                     }}
-                    className="w-full text-center text-xs px-3 py-2 bg-white border border-[#DDD6CB] rounded focus:outline-none focus:border-[#735A46] text-[#2C2926]"
+                    className="w-full text-[11px] font-mono px-2.5 py-1.5 bg-white border border-[#DDD5C8] rounded text-[#222] focus:outline-none focus:border-[#735A46] resize-none"
                   />
-                  {passwordError && (
-                    <p className="text-xs text-red-600 font-medium">{passwordError}</p>
-                  )}
-                  <button
-                    type="submit"
-                    className="w-full py-1.5 text-xs text-white bg-[#6A5442] hover:bg-[#584535] rounded cursor-pointer"
-                  >
-                    {t('PINログイン', 'PIN 로그인', 'PIN Sign In')}
-                  </button>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCredentialLogin('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.forged.token')}
+                      className="text-[10px] px-2.5 py-1 bg-[#E2DBD0] hover:bg-[#D5CCBE] text-[#4A4237] rounded cursor-pointer"
+                    >
+                      {t('偽造トークン拒否テスト', '위조 토큰 거부 테스트', 'Test Forged Token')}
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isLoggingIn || !idTokenInput.trim()}
+                      className="text-xs px-3 py-1 bg-[#665241] hover:bg-[#524133] disabled:opacity-50 text-white rounded cursor-pointer font-medium"
+                    >
+                      {isLoggingIn ? t('検証中...', '검증 중...', 'Verifying...') : t('トークン検証', '토큰 검증', 'Verify Token')}
+                    </button>
+                  </div>
                 </form>
               )}
             </div>
@@ -1162,12 +970,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               </button>
 
               <button
-                onClick={() => {
-                  setActiveTab('adminEmail');
-                  setEmailChangeError('');
-                  setEmailChangeSuccess('');
-                  setPendingEmailChange(authService.getPendingEmailChange());
-                }}
+                onClick={() => setActiveTab('adminEmail')}
                 className={`py-2.5 px-3 font-medium whitespace-nowrap cursor-pointer border-b-2 -mb-[1px] transition-colors flex items-center gap-1.5 ${
                   activeTab === 'adminEmail'
                     ? 'border-[#614936] text-[#1F1E1D] bg-[#FAF8F5]'
@@ -2720,34 +2523,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Feedback Alerts */}
-                  {emailChangeError && (
-                    <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2 animate-fadeIn">
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                      <span className="flex-1 leading-relaxed">{emailChangeError}</span>
-                      <button
-                        type="button"
-                        onClick={() => setEmailChangeError('')}
-                        className="text-red-500 hover:text-red-800 cursor-pointer text-xs"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  )}
-
-                  {emailChangeSuccess && (
-                    <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-start gap-2 animate-fadeIn">
-                      <Check className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
-                      <span className="flex-1 leading-relaxed">{emailChangeSuccess}</span>
-                      <button
-                        type="button"
-                        onClick={() => setEmailChangeSuccess('')}
-                        className="text-emerald-600 hover:text-emerald-900 cursor-pointer text-xs"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  )}
 
                   {/* Status Card: Currently Authorized Email */}
                   <div className="bg-[#FAF8F5] border border-[#DDD5C9] rounded-lg p-4 space-y-3">
@@ -2792,233 +2567,26 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     </div>
                   </div>
 
-                  {/* METHOD A: Change Email Through Admin Interface */}
+                  {/* Server-Enforced Single Administrator Architecture Panel */}
                   <div className="bg-white border border-[#E0D8CC] rounded-lg p-5 space-y-4">
                     <div className="border-b border-[#EAE3D6] pb-3">
                       <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 bg-[#4A3B2E] text-white rounded text-[10px] font-bold">
-                          METHOD A
+                        <span className="px-2 py-0.5 bg-emerald-800 text-white rounded text-[10px] font-bold">
+                          SECURITY
                         </span>
                         <h5 className="font-medium text-[#2E2822] text-xs sm:text-sm">
                           {t(
-                            '管理画面から即時変更（安全確認コード検証）',
-                            '관리자 화면에서 즉시 변경 (보안 인증 코드 검증)',
-                            'Change Administrator Email via Admin Interface'
+                            '単一管理者アカウント（サーバーサイド厳格検証）',
+                            '단일 관리자 계정 (서버사이드 엄격 검증)',
+                            'Sole Administrator (Server-Enforced Authorization)'
                           )}
                         </h5>
                       </div>
                       <p className="text-[11px] text-[#7D766C] mt-1 leading-relaxed">
                         {t(
-                          '再デプロイを行わずに、ブラウザ上で即座に管理者メールアドレスを更新します。誤操作による締め出しを防ぐため、6桁のセキュリティ確認コードを入力した後に初めて確定されます。現在のログインセッションは中断されません。',
-                          '재배포 없이 관리자 화면에서 즉시 관리자 이메일을 안전하게 변경합니다. 오입력으로 인한 잠김(Lockout)을 방지하기 위해 6자리 보안 인증 코드 검증을 거친 후 안전하게 적용되며, 현재 세션은 유지됩니다.',
-                          'Updates the authorized administrator email directly in the browser without redeployment. Requires entering a 6-digit verification code to prevent lockout. Preserves active admin session.'
-                        )}
-                      </p>
-                    </div>
-
-                    {/* Pending Verification Challenge Workflow */}
-                    {pendingEmailChange ? (
-                      <div className="bg-[#FAF3EB] border border-[#E3D3C1] rounded-lg p-4 space-y-4">
-                        <div className="flex items-start gap-2">
-                          <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                          <div>
-                            <div className="font-medium text-amber-900 text-xs">
-                              {t(
-                                '変更リクエストが保留中です（確認待ち）',
-                                '이메일 변경 요청이 대기 중입니다 (인증 필요)',
-                                'Email Change Request Pending Verification'
-                              )}
-                            </div>
-                            <div className="text-[11px] text-amber-800 mt-0.5">
-                              {t(
-                                '変更先の新メールアドレス: ',
-                                '변경 대상 새 이메일 주소: ',
-                                'New Target Email: '
-                              )}
-                              <span className="font-mono font-bold">{pendingEmailChange.newEmail}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Display Security Code */}
-                        <div className="bg-white border border-[#D8C7B3] rounded-md p-3 text-center space-y-1">
-                          <span className="text-[10px] text-[#7F7466] block uppercase tracking-wider font-medium">
-                            {t(
-                              '発行されたセキュリティ確認コード（10分間有効）',
-                              '발급된 보안 인증 코드 (10분간 유효)',
-                              'Generated Security Verification Code (Valid for 10 min)'
-                            )}
-                          </span>
-                          <span className="font-mono text-xl tracking-[0.3em] font-bold text-[#4A3B2E] select-all">
-                            {pendingEmailChange.verificationCode}
-                          </span>
-                        </div>
-
-                        {/* Form to submit verification code */}
-                        <form onSubmit={handleConfirmEmailChange} className="space-y-3">
-                          <div>
-                            <label className="block text-[11px] font-medium text-[#4A3E31] mb-1">
-                              {t(
-                                '上記の6桁の確認コードを入力してください:',
-                                '위 6자리 확인 코드를 입력하세요:',
-                                'Enter the 6-digit verification code above:'
-                              )}
-                            </label>
-                            <input
-                              type="text"
-                              maxLength={6}
-                              placeholder="123456"
-                              value={verificationCodeInput}
-                              onChange={(e) => setVerificationCodeInput(e.target.value.replace(/\D/g, ''))}
-                              className="w-full sm:w-60 font-mono text-base tracking-widest text-center px-3 py-2 bg-white border border-[#D5C7B5] rounded text-[#222] focus:outline-none focus:border-[#735A46]"
-                              autoFocus
-                            />
-                          </div>
-
-                          <div className="flex items-center gap-2 pt-1">
-                            <button
-                              type="submit"
-                              disabled={isProcessingEmailChange || verificationCodeInput.length !== 6}
-                              className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded cursor-pointer font-medium text-xs flex items-center gap-1.5 transition-colors"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              <span>
-                                {isProcessingEmailChange
-                                  ? t('更新中...', '변경 처리 중...', 'Updating...')
-                                  : t(
-                                      '確認コードを送信して変更を確定',
-                                      '확인 코드 제출 및 변경 확정',
-                                      'Confirm & Update Administrator Email'
-                                    )}
-                              </span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={handleCancelEmailChange}
-                              className="px-3.5 py-2 border border-[#D5C7B5] bg-white hover:bg-[#FAF8F5] text-[#554D41] rounded cursor-pointer font-medium text-xs"
-                            >
-                              {t('キャンセル', '취소', 'Cancel')}
-                            </button>
-                          </div>
-                        </form>
-                      </div>
-                    ) : (
-                      /* New Email Input Form */
-                      <form onSubmit={handleInitiateEmailChange} className="space-y-3">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-[11px] font-medium text-[#4A3E31] mb-1">
-                              {t(
-                                '新しい管理者 Google メールアドレス',
-                                '새 관리자 Google 이메일 주소',
-                                'New Administrator Google Email'
-                              )}
-                            </label>
-                            <input
-                              type="email"
-                              placeholder="new-admin@gmail.com"
-                              value={newAdminEmailInput}
-                              onChange={(e) => {
-                                setNewAdminEmailInput(e.target.value);
-                                setEmailChangeError('');
-                              }}
-                              className="w-full text-xs px-3 py-2 bg-[#FAF8F5] border border-[#DDD5C9] rounded text-[#222] focus:outline-none focus:bg-white focus:border-[#735A46]"
-                              required
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] font-medium text-[#4A3E31] mb-1">
-                              {t(
-                                '確認のため再入力',
-                                '확인을 위해 재입력',
-                                'Confirm New Email Address'
-                              )}
-                            </label>
-                            <input
-                              type="email"
-                              placeholder="new-admin@gmail.com"
-                              value={confirmNewEmailInput}
-                              onChange={(e) => {
-                                setConfirmNewEmailInput(e.target.value);
-                                setEmailChangeError('');
-                              }}
-                              className="w-full text-xs px-3 py-2 bg-[#FAF8F5] border border-[#DDD5C9] rounded text-[#222] focus:outline-none focus:bg-white focus:border-[#735A46]"
-                              required
-                            />
-                          </div>
-                        </div>
-
-                        <div className="pt-1">
-                          <button
-                            type="submit"
-                            className="px-4 py-2 bg-[#4A3B2E] hover:bg-[#3D2F23] text-white rounded cursor-pointer font-medium text-xs flex items-center gap-1.5 transition-colors"
-                          >
-                            <ShieldCheck className="w-3.5 h-3.5" />
-                            <span>
-                              {t(
-                                '確認コードを発行して変更を開始',
-                                '인증 코드 발급 및 변경 절차 시작',
-                                'Request Verification Code & Proceed'
-                              )}
-                            </span>
-                          </button>
-                        </div>
-                      </form>
-                    )}
-
-                    {/* Reset to Default Button (if custom email is active) */}
-                    {authService.isCustomEmailActive() && (
-                      <div className="pt-3 border-t border-[#EAE3D6] flex items-center justify-between">
-                        <div>
-                          <span className="font-medium text-[#4A3B2E] block text-xs">
-                            {t(
-                              '環境設定 / デフォルトの管理者メールに戻す',
-                              '환경 설정 / 기본 관리자 이메일로 복원',
-                              'Reset to Configured Default Email'
-                            )}
-                          </span>
-                          <span className="text-[11px] text-[#7A7266]">
-                            {t(
-                              `管理画面でのカスタム変更を解除し、環境変数またはコード初期値（${authService.getConfiguredDefaultEmail()}）に戻します。`,
-                              `관리 화면 설정을 해제하고 기본값（${authService.getConfiguredDefaultEmail()}）으로 되돌립니다.`,
-                              `Clears the custom override and restores the baseline email (${authService.getConfiguredDefaultEmail()}).`
-                            )}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleResetEmailToDefault}
-                          className="px-3 py-1.5 border border-[#DDD5C9] bg-white hover:bg-[#FAF8F5] text-[#4A3B2E] rounded cursor-pointer font-medium text-xs flex items-center gap-1.5 shrink-0"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          <span>{t('デフォルトに戻す', '기본값 복원', 'Reset to Default')}</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* METHOD B: Deployment Configuration */}
-                  <div className="bg-white border border-[#E0D8CC] rounded-lg p-5 space-y-4">
-                    <div className="border-b border-[#EAE3D6] pb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 bg-[#2D241E] text-amber-200 rounded text-[10px] font-bold">
-                          METHOD B
-                        </span>
-                        <h5 className="font-medium text-[#2E2822] text-xs sm:text-sm">
-                          {t(
-                            '環境設定 / コード変更によるデプロイ（永続的ソース）',
-                            '환경 설정 / 코드 수정을 통한 영구적 배포 설정',
-                            'Change Administrator Email via Deployment Configuration'
-                          )}
-                        </h5>
-                      </div>
-                      <p className="text-[11px] text-[#7D766C] mt-1 leading-relaxed">
-                        {t(
-                          'CI/CDやホスティング環境（Cloud Run, Vercel等）の環境変数、またはローカル設定ファイル（.env）で永続的な管理者メールアドレスを定義してビルド・デプロイする方法です。',
-                          'CI/CD 파이프라인이나 클라우드 호스팅 환경 변수, 또는 로컬 .env 설정 파일에서 기본 관리자 이메일을 정의하여 빌드 및 배포하는 정석적인 방법입니다.',
-                          'The standard method to configure the baseline administrator email via environment variables in your deployment pipeline or .env configuration file.'
+                          'セキュリティ保護のため、クライアントストレージによる管理者メール変更やローカルPINは廃止されました。Google Identity Servicesによる暗号署名検証と、サーバー環境変数（ADMIN_EMAIL）により、許可された単一アカウントのみが厳格に保護されます。',
+                          '보안 강화를 위해 브라우저 로컬 스토리지를 통한 관리자 계정 변경 및 임시 PIN 인증이 전면 폐지되었습니다. Google 공식 ID 토큰의 암호화 서명 검증과 서버 환경 변수(ADMIN_EMAIL)를 통해 지정된 단일 관리자만 안전하게 접근할 수 있습니다.',
+                          'For enterprise security, client storage overrides and local PINs have been retired. Authentication is strictly enforced via Google cryptographic ID token verification and server environment configuration.'
                         )}
                       </p>
                     </div>
@@ -3026,41 +2594,25 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     <div className="space-y-3">
                       <div>
                         <span className="text-[11px] font-medium text-[#4A3B2E] block mb-1">
-                          {t(
-                            '手順 1: .env ファイル（またはホスティング環境変数）に設定',
-                            '단계 1: .env 파일 (또는 호스팅 환경 변수)에 설정',
-                            'Step 1: Set in .env (or hosting environment variables)'
-                          )}
+                          {t('唯一の認可管理者メールアドレス (Server White-list):', '유일하게 승인된 관리자 이메일 (Server White-list):', 'Authorized Administrator Email:')}
                         </span>
-                        <pre className="bg-[#26201B] text-amber-200 p-3 rounded text-[11px] font-mono overflow-x-auto">
-                          VITE_ADMIN_EMAIL="{authService.getAllowedAdminEmail()}"
+                        <pre className="bg-[#26201B] text-emerald-300 p-3 rounded text-[11px] font-mono overflow-x-auto flex items-center justify-between">
+                          <span>{authService.getAllowedAdminEmail()}</span>
+                          <span className="text-[10px] bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-800">
+                            VERIFIED
+                          </span>
                         </pre>
                       </div>
 
                       <div>
                         <span className="text-[11px] font-medium text-[#4A3B2E] block mb-1">
-                          {t(
-                            '手順 2: プロダクションビルドを実行してデプロイ',
-                            '단계 2: 프로덕션 빌드 및 배포 실행',
-                            'Step 2: Run production build and deploy'
-                          )}
+                          {t('Netlify / サーバー環境変数設定:', 'Netlify / 서버 환경 변수 설정:', 'Netlify / Server Environment Variables:')}
                         </span>
-                        <pre className="bg-[#26201B] text-emerald-300 p-3 rounded text-[11px] font-mono overflow-x-auto">
-                          npm run build
+                        <pre className="bg-[#26201B] text-amber-200 p-3 rounded text-[11px] font-mono overflow-x-auto space-y-1">
+                          <div>ADMIN_EMAIL="{authService.getAllowedAdminEmail()}"</div>
+                          <div>GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"</div>
+                          <div>SESSION_SECRET="your-32-char-random-secret"</div>
                         </pre>
-                      </div>
-
-                      <div className="p-3 rounded bg-[#FAF8F5] border border-[#E5DEC9] text-[11px] text-[#63594C] space-y-1">
-                        <div className="font-medium text-[#2E2822]">
-                          {t('優先順位の仕組み: ', '우선순위 동작 원리: ', 'Priority Resolution: ')}
-                        </div>
-                        <p className="leading-relaxed">
-                          {t(
-                            '1. 管理画面（方法A）で設定されたカスタムメールが存在する場合はそれが最優先されます。2. 存在しない場合は VITE_ADMIN_EMAIL 環境変数（方法B）が採用されます。3. いずれも未指定の場合はシステム初期値（dhgh159030@gmail.com）が使用されます。',
-                            '1. 관리자 화면(방법 A)에서 지정한 커스텀 이메일이 최우선 적용됩니다. 2. 미지정 시 VITE_ADMIN_EMAIL 환경변수(방법 B)가 적용됩니다. 3. 둘 다 없을 경우 초기 기본값(dhgh159030@gmail.com)이 사용됩니다.',
-                            '1. Custom override in Admin UI takes precedence. 2. VITE_ADMIN_EMAIL from environment is used as the deployment baseline. 3. Built-in default (dhgh159030@gmail.com) is the fallback.'
-                          )}
-                        </p>
                       </div>
                     </div>
                   </div>

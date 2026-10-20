@@ -102,7 +102,7 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState<boolean>(() => authService.isAuthorizedAdmin());
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
 
-  // Initial Content Load
+  // Initial Content & Server-Verified Session Load
   useEffect(() => {
     loadPublishedContent().then((loaded) => {
       if (loaded) {
@@ -111,13 +111,21 @@ export default function App() {
       }
     });
 
-    if (authService.isAuthorizedAdmin()) {
-      loadDraftContent().then((draft) => {
-        if (draft) {
-          setDraftContent(draft);
-        }
-      });
-    }
+    // Check genuine server-verified admin session
+    authService.checkSession().then((res) => {
+      if (res.authorized && res.user) {
+        setAdminUser(res.user);
+        setIsAdmin(true);
+        loadDraftContent().then((draft) => {
+          if (draft) {
+            setDraftContent(draft);
+          }
+        });
+      } else {
+        setAdminUser(null);
+        setIsAdmin(false);
+      }
+    });
   }, []);
 
   // Determine active content:
@@ -140,24 +148,18 @@ export default function App() {
 
   // Admin session handling
   const handleAdminLogin = (user?: AdminUser) => {
-    const active =
-      user ||
-      authService.getCurrentAdmin() || {
-        email: authService.getAllowedAdminEmail(),
-        name: 'HAN DAHOON',
-        loginMethod: 'google' as const,
-        loggedInAt: new Date().toISOString(),
-      };
-    setAdminUser(active);
-    setIsAdmin(true);
-
-    loadDraftContent().then((draft) => {
-      if (draft) setDraftContent(draft);
-    });
+    if (user && user.email.toLowerCase() === authService.getAllowedAdminEmail().toLowerCase()) {
+      authService.setAdminUser(user);
+      setAdminUser(user);
+      setIsAdmin(true);
+      loadDraftContent().then((draft) => {
+        if (draft) setDraftContent(draft);
+      });
+    }
   };
 
-  const handleAdminLogout = () => {
-    authService.signOut();
+  const handleAdminLogout = async () => {
+    await authService.signOut();
     setAdminUser(null);
     setIsAdmin(false);
     setIsAdminModalOpen(false);

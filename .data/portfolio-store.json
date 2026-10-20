@@ -1,0 +1,48 @@
+{
+  "published": null,
+  "draft": null,
+  "history": [],
+  "inquiries": [
+    {
+      "id": "inq-1792502908063-rfv7d",
+      "name": "Visitor Test",
+      "email": "visitor@example.com",
+      "message": "Hello Han Dahoon, I would like to inquire about coffee consulting.",
+      "company": "",
+      "createdAt": "2026-10-20T13:28:28.063Z"
+    },
+    {
+      "id": "inq-1792502836141-mgdrs",
+      "name": "Visitor Test",
+      "email": "visitor@example.com",
+      "message": "Hello Han Dahoon, I would like to inquire about coffee consulting.",
+      "company": "",
+      "createdAt": "2026-10-20T13:27:16.141Z"
+    },
+    {
+      "id": "inq-1792502813249-joqfj",
+      "name": "Visitor Test",
+      "email": "visitor@example.com",
+      "message": "Hello Han Dahoon, I would like to inquire about coffee consulting.",
+      "company": "",
+      "createdAt": "2026-10-20T13:26:53.249Z"
+    },
+    {
+      "id": "inq-1792502748042-kc0kc",
+      "name": "Visitor Test",
+      "email": "visitor@example.com",
+      "message": "Hello Han Dahoon, I would like to inquire about coffee consulting.",
+      "company": "",
+      "createdAt": "2026-10-20T13:25:48.042Z"
+    },
+    {
+      "id": "inq-1792502712757-hefms",
+      "name": "Visitor Test",
+      "email": "visitor@example.com",
+      "message": "Hello Han Dahoon, I would like to inquire about coffee consulting.",
+      "company": "",
+      "createdAt": "2026-10-20T13:25:12.757Z"
+    }
+  ],
+  "updatedAt": "2026-10-20T13:28:28.064Z"
+}

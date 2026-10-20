@@ -1,411 +1,206 @@
-export const DEFAULT_ADMIN_EMAIL = 'dhgh159030@gmail.com';
+import { apiClient } from './apiClient';
 
-// Source of truth for deployment and environment configuration (Method B)
-export const CONFIGURED_ADMIN_EMAIL: string = (
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_ADMIN_EMAIL) ||
-  (typeof process !== 'undefined' && process.env?.VITE_ADMIN_EMAIL) ||
-  DEFAULT_ADMIN_EMAIL
-)
-  .trim()
-  .toLowerCase();
+/**
+ * The ONLY authorized administrator account for the portfolio.
+ * Verified cryptographically by the server.
+ */
+export const AUTHORIZED_ADMIN_EMAIL = 'dahoon0519@gmail.com';
 
-// Exported for backward compatibility; dynamically resolves to default
-export const ALLOWED_ADMIN_EMAIL = DEFAULT_ADMIN_EMAIL;
-
-export const CUSTOM_ADMIN_EMAIL_KEY = 'dahoon_custom_admin_email';
-export const PENDING_EMAIL_CHANGE_KEY = 'dahoon_pending_email_change';
+// Exported for backward compatibility
+export const DEFAULT_ADMIN_EMAIL = AUTHORIZED_ADMIN_EMAIL;
+export const ALLOWED_ADMIN_EMAIL = AUTHORIZED_ADMIN_EMAIL;
+export const CONFIGURED_ADMIN_EMAIL = AUTHORIZED_ADMIN_EMAIL;
 
 export interface AdminUser {
   email: string;
   name: string;
   photoUrl?: string;
-  loginMethod: 'google' | 'password';
-  loggedInAt: string;
+  loginMethod: 'google';
+  loggedInAt?: string;
   token?: string;
 }
 
-export interface PendingEmailChange {
-  newEmail: string;
-  verificationCode: string;
-  createdAt: string;
-  expiresAt: string;
-}
+// In-memory authentication state (cannot be tampered via browser storage)
+let currentAdminUser: AdminUser | null = null;
+let isSessionChecked = false;
 
-const STORAGE_KEY = 'dahoon_admin_auth';
-const TOKEN_KEY = 'dahoon_admin_token';
-const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-function isValidEmailFormat(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function generateToken(email: string, time: string): string {
-  // Simple deterministic client token with timestamp and email signature
-  const raw = `${email}:${time}:dahoon-portfolio-secure-session`;
-  let hash = 0;
-  for (let i = 0; i < raw.length; i++) {
-    hash = (hash << 5) - hash + raw.charCodeAt(i);
-    hash |= 0;
-  }
-  return `adm-${Math.abs(hash).toString(36)}-${Date.now().toString(36)}`;
-}
+// Remove legacy insecure storage keys to ensure clean state
+try {
+  sessionStorage.removeItem('dahoon_is_admin');
+  sessionStorage.removeItem('dahoon_admin_auth');
+  sessionStorage.removeItem('dahoon_admin_token');
+  localStorage.removeItem('dahoon_custom_admin_email');
+  sessionStorage.removeItem('dahoon_pending_email_change');
+} catch {}
 
 export const authService = {
   /**
-   * Returns the currently authorized administrator email address.
-   * Priority:
-   * 1. Dynamic admin-managed override in persistent storage (Method A)
-   * 2. Environment/Deployment configuration via VITE_ADMIN_EMAIL (Method B)
-   * 3. Built-in default administrator email fallback
+   * The sole authorized administrator email address.
    */
   getAllowedAdminEmail(): string {
-    try {
-      const custom = localStorage.getItem(CUSTOM_ADMIN_EMAIL_KEY);
-      if (custom && isValidEmailFormat(custom)) {
-        return custom.trim().toLowerCase();
-      }
-    } catch {
-      // In restricted or server environments, fallback gracefully
-    }
-    return CONFIGURED_ADMIN_EMAIL;
+    return AUTHORIZED_ADMIN_EMAIL;
   },
 
-  /**
-   * Returns the configuration-level default email (from environment or code).
-   */
   getConfiguredDefaultEmail(): string {
-    return CONFIGURED_ADMIN_EMAIL;
+    return AUTHORIZED_ADMIN_EMAIL;
+  },
+
+  isCustomEmailActive(): boolean {
+    return false;
   },
 
   /**
-   * Indicates whether a custom email override is currently active via Method A.
+   * Returns whether the current in-memory session is authorized.
    */
-  isCustomEmailActive(): boolean {
-    try {
-      const custom = localStorage.getItem(CUSTOM_ADMIN_EMAIL_KEY);
-      return Boolean(
-        custom &&
-          isValidEmailFormat(custom) &&
-          custom.trim().toLowerCase() !== CONFIGURED_ADMIN_EMAIL
-      );
-    } catch {
-      return false;
-    }
-  },
-
   isAuthorizedAdmin(): boolean {
-    const admin = this.getCurrentAdmin();
-    if (!admin) return false;
-    const allowed = this.getAllowedAdminEmail().toLowerCase();
-    if (admin.email.toLowerCase() !== allowed) {
-      return false;
-    }
-    const token = sessionStorage.getItem(TOKEN_KEY);
-    if (!token || !token.startsWith('adm-')) {
-      return false;
-    }
-    const loggedInTime = new Date(admin.loggedInAt).getTime();
-    if (isNaN(loggedInTime) || Date.now() - loggedInTime > SESSION_MAX_AGE_MS) {
-      this.signOut();
-      return false;
-    }
-    return true;
-  },
-
-  getCurrentAdmin(): AdminUser | null {
-    try {
-      const stored = sessionStorage.getItem(STORAGE_KEY);
-      if (!stored) return null;
-      const parsed: AdminUser = JSON.parse(stored);
-      const allowed = this.getAllowedAdminEmail().toLowerCase();
-      if (parsed && parsed.email?.toLowerCase() === allowed) {
-        const loggedInTime = new Date(parsed.loggedInAt).getTime();
-        if (isNaN(loggedInTime) || Date.now() - loggedInTime > SESSION_MAX_AGE_MS) {
-          this.signOut();
-          return null;
-        }
-        return parsed;
-      }
-      // If unauthorized email found in storage, purge it
-      this.signOut();
-      return null;
-    } catch {
-      return null;
-    }
-  },
-
-  async signInWithGoogleAccount(inputEmail?: string): Promise<AdminUser> {
-    const allowed = this.getAllowedAdminEmail().toLowerCase();
-    const cleanEmail = (inputEmail || allowed).trim().toLowerCase();
-
-    // Simulate slight network auth delay for genuine UX
-    await new Promise((resolve) => setTimeout(resolve, 350));
-
-    if (cleanEmail !== allowed) {
-      throw new Error(
-        `許可されていないアカウントです（入力: ${inputEmail}）。管理者専用アカウント（${allowed}）のみアクセス可能です。`
-      );
-    }
-
-    const now = new Date().toISOString();
-    const token = generateToken(allowed, now);
-
-    const adminUser: AdminUser = {
-      email: allowed,
-      name: 'HAN DAHOON (ハン・ダフン)',
-      photoUrl:
-        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80',
-      loginMethod: 'google',
-      loggedInAt: now,
-      token,
-    };
-
-    try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(adminUser));
-      sessionStorage.setItem(TOKEN_KEY, token);
-      sessionStorage.setItem('dahoon_is_admin', 'true');
-    } catch (e) {
-      console.warn('Session storage write error:', e);
-    }
-
-    return adminUser;
-  },
-
-  async signInWithPassword(password: string): Promise<AdminUser> {
-    const trimmed = password.trim();
-    if (!trimmed) {
-      throw new Error('PINを入力してください。');
-    }
-
-    const allowed = this.getAllowedAdminEmail().toLowerCase();
-
-    // Attempt secure server-validated authorization endpoint if backend is configured
-    try {
-      const response = await fetch('/api/admin/verify-pin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: trimmed }),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.authorized && data.user) {
-          const now = new Date().toISOString();
-          const token = data.token || generateToken(allowed, now);
-          const adminUser: AdminUser = {
-            email: allowed,
-            name: data.user.name || 'HAN DAHOON (Admin)',
-            loginMethod: 'password',
-            loggedInAt: now,
-            token,
-          };
-          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(adminUser));
-          sessionStorage.setItem(TOKEN_KEY, token);
-          sessionStorage.setItem('dahoon_is_admin', 'true');
-          return adminUser;
-        }
-      }
-    } catch {
-      // Backend endpoint not reachable or not provisioned in current architecture
-    }
-
-    // Client-side hardcoded master PIN has been completely removed to prevent secret exposure.
-    throw new Error(
-      'セキュリティ保護のため、クライアント側のハードコードされたPIN認証は廃止されました。許可されたGoogle管理者アカウントでログインしてください。'
+    return Boolean(
+      currentAdminUser &&
+        currentAdminUser.email.trim().toLowerCase() === AUTHORIZED_ADMIN_EMAIL
     );
   },
 
   /**
-   * Method A - Step 1: Initiate an email change request.
-   * Requires active admin authorization.
-   * Generates a 6-digit verification security code with a 10-minute validity window.
+   * Returns the current verified administrator user object from memory.
    */
-  initiateAdminEmailChange(newEmail: string): {
-    verificationCode: string;
-    expiresAt: string;
-    currentEmail: string;
-  } {
-    if (!this.isAuthorizedAdmin()) {
-      throw new Error(
-        '権限エラー: 管理者としてログインしている必要があります。 / Unauthorized: Active admin login required.'
-      );
-    }
+  getCurrentAdmin(): AdminUser | null {
+    return currentAdminUser;
+  },
 
-    const cleanNewEmail = newEmail.trim().toLowerCase();
-    if (!isValidEmailFormat(cleanNewEmail)) {
-      throw new Error(
-        '有効なメールアドレス形式を入力してください。 / Please enter a valid email address format.'
-      );
-    }
-
-    const currentEmail = this.getAllowedAdminEmail().toLowerCase();
-    if (cleanNewEmail === currentEmail) {
-      throw new Error(
-        '現在の管理者メールアドレスと同じです。異なるメールアドレスを入力してください。 / The new email address must be different from the current administrator email.'
-      );
-    }
-
-    // Generate secure 6-digit verification code
-    const randomArray = new Uint32Array(1);
-    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-      crypto.getRandomValues(randomArray);
+  /**
+   * Manually sets the active administrator user in memory (e.g. upon successful server verification).
+   */
+  setAdminUser(user: AdminUser | null): void {
+    if (user && user.email.trim().toLowerCase() === AUTHORIZED_ADMIN_EMAIL) {
+      currentAdminUser = user;
     } else {
-      randomArray[0] = Math.floor(Math.random() * 1000000);
+      currentAdminUser = null;
     }
-    const verificationCode = String(100000 + (randomArray[0] % 900000));
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString(); // 10 minutes
+  },
 
-    const pendingData: PendingEmailChange = {
-      newEmail: cleanNewEmail,
-      verificationCode,
-      createdAt: now.toISOString(),
-      expiresAt,
+  /**
+   * Validates the active session against the server /api/auth/me endpoint.
+   * This is the single source of truth for authorization.
+   */
+  async checkSession(): Promise<{ authorized: boolean; user: AdminUser | null }> {
+    try {
+      const res = await apiClient.get<{ authorized: boolean; user: any }>('/api/auth/me');
+      if (res && res.authorized && res.user && res.user.email.trim().toLowerCase() === AUTHORIZED_ADMIN_EMAIL) {
+        currentAdminUser = {
+          email: res.user.email,
+          name: res.user.name || 'HAN DAHOON',
+          photoUrl: res.user.picture,
+          loginMethod: 'google',
+        };
+        isSessionChecked = true;
+        return { authorized: true, user: currentAdminUser };
+      }
+    } catch (err) {
+      console.warn('Session verification network error:', err);
+    }
+
+    currentAdminUser = null;
+    isSessionChecked = true;
+    return { authorized: false, user: null };
+  },
+
+  /**
+   * Authenticates with the server using a real Google ID Token credential
+   * obtained from Google Identity Services.
+   */
+  async signInWithGoogleCredential(credential: string): Promise<AdminUser> {
+    if (!credential || typeof credential !== 'string') {
+      throw new Error('Google認証クレデンシャル（IDトークン）が無効です。');
+    }
+
+    const res = await apiClient.post<{
+      success: boolean;
+      authorized: boolean;
+      token?: string;
+      user: {
+        email: string;
+        name: string;
+        picture?: string;
+        loginMethod: 'google';
+        loggedInAt: string;
+      };
+    }>('/api/auth/google', { credential });
+
+    if (!res || !res.authorized || !res.user) {
+      throw new Error('管理者権限の検証に失敗しました。');
+    }
+
+    if (res.user.email.trim().toLowerCase() !== AUTHORIZED_ADMIN_EMAIL) {
+      throw new Error(
+        `許可されていないアカウントです（${res.user.email}）。管理者専用アカウント（${AUTHORIZED_ADMIN_EMAIL}）のみアクセス可能です。`
+      );
+    }
+
+    if (res.token) {
+      apiClient.setStoredBearerToken(res.token);
+    }
+
+    currentAdminUser = {
+      email: res.user.email,
+      name: res.user.name,
+      photoUrl: res.user.picture,
+      loginMethod: 'google',
+      loggedInAt: res.user.loggedInAt,
+      token: res.token,
     };
 
-    try {
-      sessionStorage.setItem(PENDING_EMAIL_CHANGE_KEY, JSON.stringify(pendingData));
-    } catch (e) {
-      console.warn('Failed to store pending email change:', e);
-    }
-
-    return { verificationCode, expiresAt, currentEmail };
+    return currentAdminUser;
   },
 
-  getPendingEmailChange(): PendingEmailChange | null {
+  /**
+   * Logs out the administrator by clearing server HttpOnly session cookies
+   * and clearing in-memory state.
+   */
+  async signOut(): Promise<void> {
     try {
-      const stored = sessionStorage.getItem(PENDING_EMAIL_CHANGE_KEY);
-      if (!stored) return null;
-      const parsed: PendingEmailChange = JSON.parse(stored);
-      if (!parsed || !parsed.newEmail || !parsed.verificationCode || !parsed.expiresAt) {
-        return null;
-      }
-      if (new Date(parsed.expiresAt).getTime() < Date.now()) {
-        this.cancelPendingEmailChange();
-        return null;
-      }
-      return parsed;
-    } catch {
-      return null;
-    }
-  },
-
-  cancelPendingEmailChange(): void {
-    try {
-      sessionStorage.removeItem(PENDING_EMAIL_CHANGE_KEY);
-    } catch (e) {
-      console.warn('Failed to clear pending email change:', e);
+      await apiClient.post('/api/auth/logout');
+    } catch (err) {
+      console.warn('Logout endpoint error:', err);
+    } finally {
+      currentAdminUser = null;
+      apiClient.setStoredBearerToken(null);
     }
   },
 
   /**
-   * Method A - Step 2: Confirm email change with the verification code.
-   * Requires active admin authorization and valid code.
-   * Updates allowed admin email and preserves existing admin session seamlessly.
+   * Legacy method stubs for backward compatibility.
+   * Client-side email change overrides are strictly disabled.
    */
-  confirmAdminEmailChange(verificationCode: string): { success: boolean; newEmail: string } {
-    if (!this.isAuthorizedAdmin()) {
-      throw new Error(
-        '権限エラー: 管理者としてログインしている必要があります。 / Unauthorized: Active admin login required.'
-      );
-    }
-
-    const pending = this.getPendingEmailChange();
-    if (!pending) {
-      throw new Error(
-        '変更リクエストが存在しないか、有効期限（10分）が切れています。再度申請してください。 / Verification code has expired or no pending change request was found.'
-      );
-    }
-
-    if (verificationCode.trim() !== pending.verificationCode) {
-      throw new Error(
-        '確認コードが一致しません。正しい6桁のコードを入力してください。 / Invalid verification code. Please check the 6-digit code and try again.'
-      );
-    }
-
-    const newEmail = pending.newEmail.toLowerCase();
-
-    // Commit change to persistent storage
-    try {
-      localStorage.setItem(CUSTOM_ADMIN_EMAIL_KEY, newEmail);
-      this.cancelPendingEmailChange();
-    } catch (e) {
-      throw new Error(
-        'メールアドレスの保存中にストレージエラーが発生しました。 / Storage error occurred while updating administrator email.'
-      );
-    }
-
-    // Refresh current admin session with new email to maintain active login without lockout
-    try {
-      const current = this.getCurrentAdmin();
-      const now = new Date().toISOString();
-      const token = generateToken(newEmail, now);
-      const updatedUser: AdminUser = {
-        email: newEmail,
-        name: current?.name || 'HAN DAHOON (Admin)',
-        photoUrl: current?.photoUrl,
-        loginMethod: current?.loginMethod || 'google',
-        loggedInAt: now,
-        token,
-      };
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(updatedUser));
-      sessionStorage.setItem(TOKEN_KEY, token);
-      sessionStorage.setItem('dahoon_is_admin', 'true');
-    } catch (e) {
-      console.warn('Failed to refresh admin session after email update:', e);
-    }
-
-    return { success: true, newEmail };
+  initiateAdminEmailChange(): never {
+    throw new Error(
+      'セキュリティ保護のため、クライアントストレージによる管理者メール変更は廃止されました。管理者メールは環境設定（ADMIN_EMAIL）で一元管理されています。'
+    );
   },
 
-  /**
-   * Reset custom administrator email back to configuration default (Method B source).
-   */
+  getPendingEmailChange(): null {
+    return null;
+  },
+
+  cancelPendingEmailChange(): void {},
+
+  confirmAdminEmailChange(): never {
+    throw new Error(
+      'セキュリティ保護のため、クライアントストレージによる管理者メール変更は廃止されました。'
+    );
+  },
+
   resetAdminEmailToDefault(): { success: boolean; defaultEmail: string } {
-    if (!this.isAuthorizedAdmin()) {
-      throw new Error(
-        '権限エラー: 管理者としてログインしている必要があります。 / Unauthorized: Active admin login required.'
-      );
-    }
-
-    try {
-      localStorage.removeItem(CUSTOM_ADMIN_EMAIL_KEY);
-      this.cancelPendingEmailChange();
-    } catch (e) {
-      console.warn('Failed to remove custom admin email:', e);
-    }
-
-    const defaultEmail = CONFIGURED_ADMIN_EMAIL;
-
-    // Refresh session to default email
-    try {
-      const current = this.getCurrentAdmin();
-      const now = new Date().toISOString();
-      const token = generateToken(defaultEmail, now);
-      const updatedUser: AdminUser = {
-        email: defaultEmail,
-        name: current?.name || 'HAN DAHOON (Admin)',
-        photoUrl: current?.photoUrl,
-        loginMethod: current?.loginMethod || 'google',
-        loggedInAt: now,
-        token,
-      };
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(updatedUser));
-      sessionStorage.setItem(TOKEN_KEY, token);
-      sessionStorage.setItem('dahoon_is_admin', 'true');
-    } catch (e) {
-      console.warn('Failed to refresh session on reset:', e);
-    }
-
-    return { success: true, defaultEmail };
+    return { success: true, defaultEmail: AUTHORIZED_ADMIN_EMAIL };
   },
 
-  signOut(): void {
-    try {
-      sessionStorage.removeItem(STORAGE_KEY);
-      sessionStorage.removeItem(TOKEN_KEY);
-      sessionStorage.removeItem('dahoon_is_admin');
-    } catch (e) {
-      console.warn('Session storage clear error:', e);
-    }
+  async signInWithGoogleAccount(): Promise<never> {
+    throw new Error(
+      'セキュリティ保護のため、模擬ログインは廃止されました。Google Identity Servicesの公式ログインボタンから認証を行ってください。'
+    );
+  },
+
+  async signInWithPassword(): Promise<never> {
+    throw new Error(
+      'セキュリティ保護のため、パスワード・PIN認証は廃止されました。Google管理者アカウントでログインしてください。'
+    );
   },
 };
