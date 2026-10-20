@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Zen Kaku Gothic New", "Noto Sans JP", "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+  --font-serif: "Zen Kaku Gothic New", "Noto Sans JP", "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+  --font-gothic: "Zen Kaku Gothic New", "Noto Sans JP", "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+}
+
+:root {
+  --font-gothic: "Zen Kaku Gothic New", "Noto Sans JP", "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+  --font-serif: var(--font-gothic);
+  --font-sans: var(--font-gothic);
+}
+
+html[lang="ja"],
+:lang(ja) {
+  --font-gothic: "Zen Kaku Gothic New", "Noto Sans JP", -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+  --font-serif: var(--font-gothic);
+  --font-sans: var(--font-gothic);
+  font-feature-settings: "palt" 1;
+  letter-spacing: 0.02em;
+}
+
+html[lang="ko"],
+:lang(ko) {
+  --font-gothic: "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-serif: var(--font-gothic);
+  --font-sans: var(--font-gothic);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  font-feature-settings: normal;
+  letter-spacing: -0.015em;
+}
+
+html[lang="en"],
+:lang(en) {
+  --font-gothic: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-serif: var(--font-gothic);
+  --font-sans: var(--font-gothic);
+  word-break: normal;
+  overflow-wrap: break-word;
+  font-feature-settings: normal;
+  letter-spacing: 0.005em;
+}
+
+html,
+body {
+  font-family: var(--font-gothic);
+  background-color: #FAF8F5;
+  color: #2D2B29;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ensure headings, titles, quotes and body text strictly resolve to clean Gothic font stack */
+.font-serif-jp,
+.font-sans-jp,
+.font-gothic-jp,
+.font-serif,
+.font-sans {
+  font-family: var(--font-gothic) !important;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-gothic) !important;
+  letter-spacing: 0.02em;
+}
+
+html[lang="ja"] h1,
+html[lang="ja"] h2,
+html[lang="ja"] h3,
+html[lang="ja"] h4,
+html[lang="ja"] h5,
+html[lang="ja"] h6 {
+  font-feature-settings: "palt" 1;
+}
+
+/* Subtle scrollbar for elegant Japanese aesthetic */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #FAF8F5;
+}
+::-webkit-scrollbar-thumb {
+  background: #D8D2C7;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #B8B0A2;
+}
