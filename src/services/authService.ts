@@ -29,6 +29,7 @@ try {
   sessionStorage.removeItem('dahoon_is_admin');
   sessionStorage.removeItem('dahoon_admin_auth');
   sessionStorage.removeItem('dahoon_admin_token');
+  sessionStorage.removeItem('dahoon_admin_bearer_token');
   localStorage.removeItem('dahoon_custom_admin_email');
   sessionStorage.removeItem('dahoon_pending_email_change');
 } catch {}
@@ -135,17 +136,12 @@ export const authService = {
       );
     }
 
-    if (res.token) {
-      apiClient.setStoredBearerToken(res.token);
-    }
-
     currentAdminUser = {
       email: res.user.email,
       name: res.user.name,
       photoUrl: res.user.picture,
       loginMethod: 'google',
       loggedInAt: res.user.loggedInAt,
-      token: res.token,
     };
 
     return currentAdminUser;
@@ -162,7 +158,6 @@ export const authService = {
       console.warn('Logout endpoint error:', err);
     } finally {
       currentAdminUser = null;
-      apiClient.setStoredBearerToken(null);
     }
   },
 

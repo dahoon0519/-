@@ -1,45 +1,66 @@
 /**
  * API client for communicating with /api endpoints.
- * Automatically sends HttpOnly cookies and supports token headers.
+ * Operates purely via secure HttpOnly session cookies and CSRF protection tokens.
+ * Client-side storage of bearer tokens has been removed.
  */
 
-const TOKEN_HEADER_KEY = 'dahoon_admin_bearer_token';
+// Purge any legacy client bearer tokens from storage
+try {
+  sessionStorage.removeItem('dahoon_admin_bearer_token');
+} catch {}
+
+function getCsrfTokenFromCookie(): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
 
 export const apiClient = {
-  getStoredBearerToken(): string | null {
-    try {
-      return sessionStorage.getItem(TOKEN_HEADER_KEY);
-    } catch {
-      return null;
-    }
-  },
+  /**
+   * Ensures a valid CSRF token is available in cookies.
+   */
+  async ensureCsrfToken(): Promise<string | null> {
+    const existing = getCsrfTokenFromCookie();
+    if (existing) return existing;
 
-  setStoredBearerToken(token: string | null): void {
     try {
-      if (token) {
-        sessionStorage.setItem(TOKEN_HEADER_KEY, token);
-      } else {
-        sessionStorage.removeItem(TOKEN_HEADER_KEY);
+      const res = await fetch('/api/auth/csrf', {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data?.csrfToken || getCsrfTokenFromCookie();
       }
-    } catch {}
+    } catch (err) {
+      console.warn('Failed to fetch CSRF token:', err);
+    }
+    return getCsrfTokenFromCookie();
   },
 
   async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const method = (options.method || 'GET').toUpperCase();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
       ...(options.headers as Record<string, string>),
     };
 
-    // Attach Bearer token header if present (as extra assurance for iframe contexts where third-party cookies are blocked)
-    const bearer = this.getStoredBearerToken();
-    if (bearer && !headers['Authorization']) {
-      headers['Authorization'] = `Bearer ${bearer}`;
+    // Attach CSRF protection token for state-changing requests
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+      let csrfToken = getCsrfTokenFromCookie();
+      if (!csrfToken) {
+        csrfToken = await this.ensureCsrfToken();
+      }
+      if (csrfToken) {
+        headers['X-CSRF-Token'] = csrfToken;
+      }
     }
 
     const response = await fetch(endpoint, {
       ...options,
       headers,
-      credentials: 'include', // sends and receives HttpOnly cookies
+      credentials: 'include', // Sends and receives HttpOnly cookies
     });
 
     const data = await response.json().catch(() => null);

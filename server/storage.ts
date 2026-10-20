@@ -13,28 +13,51 @@ export interface StorageData {
 const LOCAL_DATA_DIR = path.resolve(process.cwd(), '.data');
 const LOCAL_DATA_FILE = path.join(LOCAL_DATA_DIR, 'portfolio-store.json');
 
+// Testing hook for storage failures
+let simulateStorageFailureForTest = false;
+
+export function setSimulateStorageFailureForTest(enabled: boolean): void {
+  simulateStorageFailureForTest = enabled;
+}
+
 /**
- * Checks if Netlify Blobs environment is available
+ * Checks if current runtime is a production environment (Netlify or production node)
  */
-function isNetlifyBlobsAvailable(): boolean {
-  // Netlify automatically injects NETLIFY_BLOBS_CONTEXT or functions context in Netlify
+export function isProductionEnvironment(): boolean {
   return (
-    typeof process.env.NETLIFY !== 'undefined' ||
-    typeof process.env.NETLIFY_BLOBS_CONTEXT !== 'undefined'
+    process.env.NODE_ENV === 'production' ||
+    Boolean(process.env.NETLIFY) ||
+    Boolean(process.env.NETLIFY_BLOBS_CONTEXT)
   );
 }
 
-// Lazy-loaded Netlify Blob store
+/**
+ * Checks if Netlify Blobs environment is configured
+ */
+export function isNetlifyBlobsAvailable(): boolean {
+  return (
+    Boolean(process.env.NETLIFY) ||
+    Boolean(process.env.NETLIFY_BLOBS_CONTEXT) ||
+    (Boolean(process.env.NETLIFY_SITE_ID) && Boolean(process.env.NETLIFY_AUTH_TOKEN))
+  );
+}
+
 let blobStorePromise: Promise<any> | null = null;
 
 async function getNetlifyBlobStore() {
+  if (simulateStorageFailureForTest) {
+    throw new Error('Simulated Netlify Blobs storage failure for test verification');
+  }
+
   if (!blobStorePromise) {
     blobStorePromise = (async () => {
       try {
         const { getStore } = await import('@netlify/blobs');
         return getStore('portfolio-content');
-      } catch (err) {
-        console.warn('Netlify Blobs module load failed, using local store:', err);
+      } catch (err: any) {
+        if (isProductionEnvironment()) {
+          throw new Error(`Failed to load Netlify Blobs module in production: ${err?.message}`);
+        }
         return null;
       }
     })();
@@ -43,7 +66,7 @@ async function getNetlifyBlobStore() {
 }
 
 /**
- * Local filesystem read/write helpers
+ * Local filesystem read/write helpers (strictly restricted to local development)
  */
 function readLocalStore(): StorageData {
   try {
@@ -75,38 +98,57 @@ function writeLocalStore(data: StorageData): void {
     fs.writeFileSync(LOCAL_DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
   } catch (err) {
     console.error('Error writing local file store:', err);
+    throw new Error(`Local filesystem write failed: ${(err as any)?.message}`);
   }
 }
 
 export const portfolioStorage = {
   async getPublishedContent(): Promise<any | null> {
-    if (isNetlifyBlobsAvailable()) {
+    if (simulateStorageFailureForTest) {
+      throw new Error('Simulated storage failure');
+    }
+
+    if (isProductionEnvironment()) {
       try {
         const store = await getNetlifyBlobStore();
-        if (store) {
-          const raw = await store.get('published', { type: 'json' });
-          if (raw) return raw;
+        if (!store) {
+          throw new Error('Netlify Blobs store is uninitialized in production.');
         }
-      } catch (err) {
-        console.warn('Netlify Blobs getPublishedContent error, checking local store:', err);
+        const raw = await store.get('published', { type: 'json' });
+        return raw || null;
+      } catch (err: any) {
+        throw new Error(
+          `Persistent storage read failed: Unable to fetch published content from Netlify Blobs in production (${err.message}).`
+        );
       }
     }
+
+    // Local non-production development
     return readLocalStore().published;
   },
 
   async setPublishedContent(content: any): Promise<void> {
-    if (isNetlifyBlobsAvailable()) {
+    if (simulateStorageFailureForTest) {
+      throw new Error('Simulated persistent storage failure on write');
+    }
+
+    if (isProductionEnvironment()) {
       try {
         const store = await getNetlifyBlobStore();
-        if (store) {
-          await store.setJSON('published', content);
+        if (!store) {
+          throw new Error('Netlify Blobs store is uninitialized in production.');
         }
-      } catch (err) {
-        console.warn('Netlify Blobs setPublishedContent error:', err);
+        await store.setJSON('published', content);
+        return;
+      } catch (err: any) {
+        // DO NOT silently fall back to local disk in production!
+        throw new Error(
+          `Persistent storage save failed: Could not persist published content to Netlify Blobs in production (${err.message}). Disallowing local disk fallback to prevent silent data loss.`
+        );
       }
     }
 
-    // Always mirror to local file store
+    // In local development: write to local file store
     const local = readLocalStore();
     local.published = content;
     local.updatedAt = new Date().toISOString();
@@ -114,29 +156,45 @@ export const portfolioStorage = {
   },
 
   async getDraftContent(): Promise<any | null> {
-    if (isNetlifyBlobsAvailable()) {
+    if (simulateStorageFailureForTest) {
+      throw new Error('Simulated storage failure');
+    }
+
+    if (isProductionEnvironment()) {
       try {
         const store = await getNetlifyBlobStore();
-        if (store) {
-          const raw = await store.get('draft', { type: 'json' });
-          if (raw) return raw;
+        if (!store) {
+          throw new Error('Netlify Blobs store is uninitialized in production.');
         }
-      } catch (err) {
-        console.warn('Netlify Blobs getDraftContent error, checking local store:', err);
+        const raw = await store.get('draft', { type: 'json' });
+        return raw || null;
+      } catch (err: any) {
+        throw new Error(
+          `Persistent storage read failed: Unable to fetch draft from Netlify Blobs in production (${err.message}).`
+        );
       }
     }
+
     return readLocalStore().draft;
   },
 
   async setDraftContent(content: any): Promise<void> {
-    if (isNetlifyBlobsAvailable()) {
+    if (simulateStorageFailureForTest) {
+      throw new Error('Simulated persistent storage failure on write');
+    }
+
+    if (isProductionEnvironment()) {
       try {
         const store = await getNetlifyBlobStore();
-        if (store) {
-          await store.setJSON('draft', content);
+        if (!store) {
+          throw new Error('Netlify Blobs store is uninitialized in production.');
         }
-      } catch (err) {
-        console.warn('Netlify Blobs setDraftContent error:', err);
+        await store.setJSON('draft', content);
+        return;
+      } catch (err: any) {
+        throw new Error(
+          `Persistent storage save failed: Could not persist draft to Netlify Blobs in production (${err.message}).`
+        );
       }
     }
 
@@ -147,14 +205,21 @@ export const portfolioStorage = {
   },
 
   async clearDraftContent(): Promise<void> {
-    if (isNetlifyBlobsAvailable()) {
+    if (simulateStorageFailureForTest) {
+      throw new Error('Simulated persistent storage failure on write');
+    }
+
+    if (isProductionEnvironment()) {
       try {
         const store = await getNetlifyBlobStore();
         if (store) {
           await store.delete('draft');
         }
-      } catch (err) {
-        console.warn('Netlify Blobs clearDraftContent error:', err);
+        return;
+      } catch (err: any) {
+        throw new Error(
+          `Persistent storage clear failed: Could not delete draft in Netlify Blobs (${err.message}).`
+        );
       }
     }
 
@@ -165,29 +230,45 @@ export const portfolioStorage = {
   },
 
   async getVersionHistory(): Promise<any[]> {
-    if (isNetlifyBlobsAvailable()) {
+    if (simulateStorageFailureForTest) {
+      throw new Error('Simulated storage failure');
+    }
+
+    if (isProductionEnvironment()) {
       try {
         const store = await getNetlifyBlobStore();
-        if (store) {
-          const raw = await store.get('history', { type: 'json' });
-          if (Array.isArray(raw)) return raw;
+        if (!store) {
+          throw new Error('Netlify Blobs store is uninitialized in production.');
         }
-      } catch (err) {
-        console.warn('Netlify Blobs getVersionHistory error:', err);
+        const raw = await store.get('history', { type: 'json' });
+        return Array.isArray(raw) ? raw : [];
+      } catch (err: any) {
+        throw new Error(
+          `Persistent storage read failed: Unable to fetch version history from Netlify Blobs (${err.message}).`
+        );
       }
     }
+
     return readLocalStore().history || [];
   },
 
   async setVersionHistory(history: any[]): Promise<void> {
-    if (isNetlifyBlobsAvailable()) {
+    if (simulateStorageFailureForTest) {
+      throw new Error('Simulated persistent storage failure on write');
+    }
+
+    if (isProductionEnvironment()) {
       try {
         const store = await getNetlifyBlobStore();
-        if (store) {
-          await store.setJSON('history', history);
+        if (!store) {
+          throw new Error('Netlify Blobs store is uninitialized in production.');
         }
-      } catch (err) {
-        console.warn('Netlify Blobs setVersionHistory error:', err);
+        await store.setJSON('history', history);
+        return;
+      } catch (err: any) {
+        throw new Error(
+          `Persistent storage save failed: Could not persist version history to Netlify Blobs (${err.message}).`
+        );
       }
     }
 
@@ -198,53 +279,66 @@ export const portfolioStorage = {
   },
 
   async getContactInquiries(): Promise<any[]> {
-    if (isNetlifyBlobsAvailable()) {
+    if (simulateStorageFailureForTest) {
+      throw new Error('Simulated storage failure');
+    }
+
+    if (isProductionEnvironment()) {
       try {
         const store = await getNetlifyBlobStore();
-        if (store) {
-          const raw = await store.get('inquiries', { type: 'json' });
-          if (Array.isArray(raw)) return raw;
+        if (!store) {
+          throw new Error('Netlify Blobs store is uninitialized in production.');
         }
-      } catch (err) {
-        console.warn('Netlify Blobs getContactInquiries error:', err);
+        const raw = await store.get('inquiries', { type: 'json' });
+        return Array.isArray(raw) ? raw : [];
+      } catch (err: any) {
+        throw new Error(
+          `Persistent storage read failed: Unable to fetch inquiries from Netlify Blobs (${err.message}).`
+        );
       }
     }
+
     return readLocalStore().inquiries || [];
   },
 
   async addContactInquiry(inquiry: any): Promise<any> {
-    const list = await this.getContactInquiries();
-    const updated = [inquiry, ...list];
-
-    if (isNetlifyBlobsAvailable()) {
-      try {
-        const store = await getNetlifyBlobStore();
-        if (store) {
-          await store.setJSON('inquiries', updated);
-        }
-      } catch (err) {
-        console.warn('Netlify Blobs addContactInquiry error:', err);
-      }
+    if (simulateStorageFailureForTest) {
+      throw new Error('Simulated persistent storage failure on write');
     }
 
+    if (isProductionEnvironment()) {
+      const store = await getNetlifyBlobStore();
+      if (!store) {
+        throw new Error('Netlify Blobs store is uninitialized in production.');
+      }
+      const raw = await store.get('inquiries', { type: 'json' });
+      const list = Array.isArray(raw) ? raw : [];
+      const updated = [inquiry, ...list];
+      await store.setJSON('inquiries', updated);
+      return inquiry;
+    }
+
+    const list = readLocalStore().inquiries || [];
+    const updated = [inquiry, ...list];
     const local = readLocalStore();
     local.inquiries = updated;
     local.updatedAt = new Date().toISOString();
     writeLocalStore(local);
-
     return inquiry;
   },
 
   async clearContactInquiries(): Promise<void> {
-    if (isNetlifyBlobsAvailable()) {
-      try {
-        const store = await getNetlifyBlobStore();
-        if (store) {
-          await store.setJSON('inquiries', []);
-        }
-      } catch (err) {
-        console.warn('Netlify Blobs clearContactInquiries error:', err);
+    if (simulateStorageFailureForTest) {
+      throw new Error('Simulated persistent storage failure on write');
+    }
+
+    if (isProductionEnvironment()) {
+      const store = await getNetlifyBlobStore();
+      if (!store) {
+        throw new Error('Netlify Blobs store is uninitialized in production.');
       }
+      await store.setJSON('inquiries', []);
+      return;
     }
 
     const local = readLocalStore();

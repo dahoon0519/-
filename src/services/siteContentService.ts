@@ -276,7 +276,8 @@ export async function saveDraftContent(content: SiteContent): Promise<SiteConten
   try {
     await apiClient.post('/api/content/draft', { content: draft });
   } catch (err: any) {
-    console.warn('Server draft save warning (falling back to local cache):', err.message);
+    console.error('Server draft save failed:', err);
+    throw new Error(`임시저장 서버 동기화 실패: ${err.message || '영구 스토리지 저장에 실패했습니다.'}`);
   }
 
   // 2. Cache in local storage for offline safety
@@ -331,11 +332,12 @@ export async function publishContent(content: SiteContent, summary?: string): Pr
     updatedAt: now,
   };
 
-  // 1. Publish to backend server
+  // 1. Publish to backend server (must succeed for persistent storage)
   try {
     await apiClient.post('/api/content/publish', { content: published, summary });
   } catch (err: any) {
-    console.warn('Server publish warning:', err.message);
+    console.error('Server publish failed:', err);
+    throw new Error(`게시 서버 저장 실패: ${err.message || '영구 스토리지에 저장하지 못했습니다.'}`);
   }
 
   // 2. Mirror into local storage cache

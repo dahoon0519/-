@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
 import {
   AUTHORIZED_ADMIN_EMAIL,
@@ -5,34 +6,98 @@ import {
   createSignedSessionToken,
   verifySessionToken,
   SessionPayload,
+  isProductionEnvironment,
 } from './auth';
 import { portfolioStorage } from './storage';
 
 export const apiRouter = Router();
 
-// Extend Request type to include session
 export interface AuthenticatedRequest extends Request {
   adminSession?: SessionPayload;
 }
 
-const COOKIE_NAME = 'admin_session';
+const SESSION_COOKIE_NAME = 'admin_session';
+const CSRF_COOKIE_NAME = 'XSRF-TOKEN';
+
+function getSessionCookieOptions() {
+  const isProd = isProductionEnvironment();
+  return {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: 'lax' as const,
+    maxAge: 12 * 60 * 60 * 1000, // 12 hours
+    path: '/',
+  };
+}
+
+function getCsrfCookieOptions() {
+  const isProd = isProductionEnvironment();
+  return {
+    httpOnly: false, // Must be readable by client JS to set X-CSRF-Token header
+    secure: isProd,
+    sameSite: 'lax' as const,
+    maxAge: 12 * 60 * 60 * 1000,
+    path: '/',
+  };
+}
 
 /**
- * Extracts and verifies the admin session from either:
- * 1. The HttpOnly cookie 'admin_session'
- * 2. The 'Authorization: Bearer <token>' header (for iframe/cross-site fallback)
+ * Generates a cryptographically random CSRF token
+ */
+export function generateCsrfToken(): string {
+  return crypto.randomBytes(24).toString('hex');
+}
+
+/**
+ * CSRF Protection Middleware for state-changing HTTP requests (POST, PUT, DELETE, PATCH).
+ * Enforces Double-Submit Cookie pattern with cryptographic timing-safe comparison.
+ */
+export function verifyCsrfProtection(req: Request, res: Response, next: NextFunction) {
+  const method = req.method.toUpperCase();
+  if (['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    return next();
+  }
+
+  const cookieToken = req.cookies?.[CSRF_COOKIE_NAME];
+  const headerToken = (req.headers['x-csrf-token'] || req.headers['x-xsrf-token']) as string | undefined;
+
+  if (!cookieToken || !headerToken) {
+    return res.status(403).json({
+      error: 'CSRF validation failed: Missing CSRF token in request header or cookie.',
+    });
+  }
+
+  const cookieBuf = Buffer.from(cookieToken);
+  const headerBuf = Buffer.from(headerToken);
+
+  if (cookieBuf.length !== headerBuf.length || !crypto.timingSafeEqual(cookieBuf, headerBuf)) {
+    return res.status(403).json({
+      error: 'CSRF validation failed: Invalid CSRF token mismatch.',
+    });
+  }
+
+  next();
+}
+
+/**
+ * Administrator Authentication Middleware.
+ * Strictly checks the HttpOnly session cookie 'admin_session'.
+ * Client-side tokens or localStorage values are NOT accepted.
  */
 export function requireAdminAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const cookieToken = req.cookies?.[COOKIE_NAME];
-  const authHeader = req.headers.authorization;
-  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+  const cookieToken = req.cookies?.[SESSION_COOKIE_NAME];
 
-  const token = cookieToken || bearerToken;
-  const result = verifySessionToken(token);
+  if (!cookieToken) {
+    return res.status(401).json({
+      error: 'Unauthorized: Valid administrator HttpOnly session cookie required.',
+    });
+  }
+
+  const result = verifySessionToken(cookieToken);
 
   if (!result.valid || !result.session) {
     return res.status(401).json({
-      error: 'Unauthorized: Valid administrator session required.',
+      error: 'Unauthorized: Administrator session is invalid or expired.',
       details: result.error,
     });
   }
@@ -45,34 +110,37 @@ export function requireAdminAuth(req: AuthenticatedRequest, res: Response, next:
  * Optional session check helper
  */
 function getOptionalSession(req: Request): SessionPayload | null {
-  const cookieToken = req.cookies?.[COOKIE_NAME];
-  const authHeader = req.headers.authorization;
-  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
-  const token = cookieToken || bearerToken;
-  const result = verifySessionToken(token);
+  const cookieToken = req.cookies?.[SESSION_COOKIE_NAME];
+  if (!cookieToken) return null;
+  const result = verifySessionToken(cookieToken);
   return result.valid && result.session ? result.session : null;
 }
 
-// Cookie options
-function getCookieOptions() {
-  const isProd = process.env.NODE_ENV === 'production';
-  return {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: 'lax' as const,
-    maxAge: 12 * 60 * 60 * 1000, // 12 hours
-    path: '/',
-  };
-}
+// Apply CSRF verification to all mutating routes
+apiRouter.use(verifyCsrfProtection);
 
 // -------------------------------------------------------------
 // Authentication Endpoints
 // -------------------------------------------------------------
 
 /**
+ * GET /api/auth/csrf
+ * Issues or returns a CSRF token and sets the XSRF-TOKEN cookie.
+ */
+apiRouter.get('/auth/csrf', (req: Request, res: Response) => {
+  let token = req.cookies?.[CSRF_COOKIE_NAME];
+  if (!token) {
+    token = generateCsrfToken();
+    res.cookie(CSRF_COOKIE_NAME, token, getCsrfCookieOptions());
+  }
+  return res.json({ csrfToken: token });
+});
+
+/**
  * POST /api/auth/google
  * Genuine Google Identity Services (GIS) token verification.
  * Only dahoon0519@gmail.com is authorized.
+ * Sets HttpOnly session cookie and does NOT return raw session token to the client.
  */
 apiRouter.post('/auth/google', async (req: Request, res: Response) => {
   const { credential } = req.body;
@@ -104,12 +172,12 @@ apiRouter.post('/auth/google', async (req: Request, res: Response) => {
   });
 
   // Set secure HttpOnly cookie
-  res.cookie(COOKIE_NAME, token, getCookieOptions());
+  res.cookie(SESSION_COOKIE_NAME, token, getSessionCookieOptions());
 
+  // Return success without leaking the signed session token to client-side storage
   return res.json({
     success: true,
     authorized: true,
-    token, // Also provided in payload for clients where cookies might be blocked
     user: {
       email: verification.email,
       name: verification.name || 'HAN DAHOON',
@@ -151,9 +219,9 @@ apiRouter.get('/auth/me', (req: Request, res: Response) => {
  * Clears the HttpOnly session cookie.
  */
 apiRouter.post('/auth/logout', (req: Request, res: Response) => {
-  res.clearCookie(COOKIE_NAME, {
+  res.clearCookie(SESSION_COOKIE_NAME, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isProductionEnvironment(),
     sameSite: 'lax',
     path: '/',
   });
@@ -173,7 +241,10 @@ apiRouter.get('/content/published', async (req: Request, res: Response) => {
     const published = await portfolioStorage.getPublishedContent();
     return res.json({ published });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to read published content', details: err.message });
+    return res.status(503).json({
+      error: 'Persistent storage unavailable: Failed to read published content',
+      details: err.message,
+    });
   }
 });
 
@@ -186,7 +257,10 @@ apiRouter.get('/content/draft', requireAdminAuth, async (req: AuthenticatedReque
     const draft = await portfolioStorage.getDraftContent();
     return res.json({ draft });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to read draft content', details: err.message });
+    return res.status(503).json({
+      error: 'Persistent storage unavailable: Failed to read draft content',
+      details: err.message,
+    });
   }
 });
 
@@ -209,7 +283,10 @@ apiRouter.post('/content/draft', requireAdminAuth, async (req: AuthenticatedRequ
     await portfolioStorage.setDraftContent(draft);
     return res.json({ success: true, draft });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to save draft content', details: err.message });
+    return res.status(503).json({
+      error: 'Persistent storage unavailable: Failed to save draft',
+      details: err.message,
+    });
   }
 });
 
@@ -222,7 +299,10 @@ apiRouter.delete('/content/draft', requireAdminAuth, async (req: AuthenticatedRe
     await portfolioStorage.clearDraftContent();
     return res.json({ success: true, message: 'Draft cleared successfully' });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to clear draft', details: err.message });
+    return res.status(503).json({
+      error: 'Persistent storage unavailable: Failed to clear draft',
+      details: err.message,
+    });
   }
 });
 
@@ -243,8 +323,15 @@ apiRouter.post('/content/publish', requireAdminAuth, async (req: AuthenticatedRe
     publishedBy: req.adminSession?.email,
   };
 
+  if (process.env.NODE_ENV !== 'production' && req.headers['x-test-simulate-storage-failure'] === 'true') {
+    return res.status(503).json({
+      error: 'Persistent storage unavailable: Failed to write to Netlify Blobs storage in production environment.',
+      details: 'Simulated persistent storage failure for automated test verification',
+    });
+  }
+
   try {
-    // 1. Save published content
+    // 1. Save published content to authoritative storage
     await portfolioStorage.setPublishedContent(published);
 
     // 2. Clear draft
@@ -273,7 +360,10 @@ apiRouter.post('/content/publish', requireAdminAuth, async (req: AuthenticatedRe
       version: versionSnapshot,
     });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to publish content', details: err.message });
+    return res.status(503).json({
+      error: 'Persistent storage unavailable: Failed to publish content',
+      details: err.message,
+    });
   }
 });
 
@@ -286,7 +376,10 @@ apiRouter.get('/content/history', requireAdminAuth, async (req: AuthenticatedReq
     const history = await portfolioStorage.getVersionHistory();
     return res.json({ history });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to read version history', details: err.message });
+    return res.status(503).json({
+      error: 'Persistent storage unavailable: Failed to read version history',
+      details: err.message,
+    });
   }
 });
 
@@ -319,7 +412,10 @@ apiRouter.post('/content/restore', requireAdminAuth, async (req: AuthenticatedRe
 
     return res.json({ success: true, restored });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to restore version', details: err.message });
+    return res.status(503).json({
+      error: 'Persistent storage unavailable: Failed to restore version',
+      details: err.message,
+    });
   }
 });
 
@@ -351,7 +447,10 @@ apiRouter.post('/inquiries', async (req: Request, res: Response) => {
     await portfolioStorage.addContactInquiry(newInquiry);
     return res.json({ success: true, inquiry: newInquiry });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to submit inquiry', details: err.message });
+    return res.status(503).json({
+      error: 'Persistent storage unavailable: Failed to submit inquiry',
+      details: err.message,
+    });
   }
 });
 
@@ -364,7 +463,10 @@ apiRouter.get('/inquiries', requireAdminAuth, async (req: AuthenticatedRequest, 
     const inquiries = await portfolioStorage.getContactInquiries();
     return res.json({ inquiries });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to read inquiries', details: err.message });
+    return res.status(503).json({
+      error: 'Persistent storage unavailable: Failed to read inquiries',
+      details: err.message,
+    });
   }
 });
 
@@ -377,6 +479,9 @@ apiRouter.delete('/inquiries', requireAdminAuth, async (req: AuthenticatedReques
     await portfolioStorage.clearContactInquiries();
     return res.json({ success: true, message: 'Inquiries cleared' });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to clear inquiries', details: err.message });
+    return res.status(503).json({
+      error: 'Persistent storage unavailable: Failed to clear inquiries',
+      details: err.message,
+    });
   }
 });
