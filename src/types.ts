@@ -135,11 +135,15 @@ export interface SiteCategoryItem {
 export interface ContactInquiry {
   id: string;
   name: string;
-  phone: string;
+  phone?: string;
   email: string;
   message: string;
+  company?: string;
   createdAt: string;
-  targetEmail: string;
+  targetEmail?: string;
+  notificationStatus?: 'sent' | 'failed' | 'not_configured' | 'pending';
+  notificationError?: string | null;
+  notifiedAt?: string | null;
 }
 
 export interface SiteContent {

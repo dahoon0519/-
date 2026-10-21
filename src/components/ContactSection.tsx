@@ -12,8 +12,9 @@ import {
   MessageSquare,
   Sparkles,
   ExternalLink,
+  AlertCircle,
 } from 'lucide-react';
-import { saveContactInquiry } from '../services/siteContentService';
+import { submitContactInquiry } from '../services/siteContentService';
 import { EditableText } from './EditableText';
 
 interface ContactSectionProps {
@@ -38,8 +39,10 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   const [senderPhone, setSenderPhone] = useState('');
   const [senderEmail, setSenderEmail] = useState('');
   const [senderMessage, setSenderMessage] = useState('');
+  const [honeypot, setHoneypot] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [lastSentEmail, setLastSentEmail] = useState('');
 
   // The active admin contact email dynamically recognized
@@ -56,10 +59,17 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
     setTimeout(() => setCopied(false), 2500);
   };
 
-  const handleSubmitInquiry = (e: React.FormEvent) => {
+  const handleSubmitInquiry = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!senderName.trim() || !senderEmail.trim() || !senderMessage.trim()) {
-      alert(
+    setSubmitError(null);
+
+    const trimmedName = senderName.trim();
+    const trimmedEmail = senderEmail.trim();
+    const trimmedPhone = senderPhone.trim();
+    const trimmedMessage = senderMessage.trim();
+
+    if (!trimmedName || !trimmedEmail || !trimmedMessage) {
+      setSubmitError(
         currentLang === 'ja'
           ? 'お名前、メールアドレス、お問い合わせ内容をご入力ください。'
           : currentLang === 'ko'
@@ -69,55 +79,82 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
       return;
     }
 
+    if (trimmedName.length > 80) {
+      setSubmitError(
+        currentLang === 'ja'
+          ? 'お名前は80文字以内でご入力ください。'
+          : currentLang === 'ko'
+          ? '이름은 80자 이내로 입력해 주세요.'
+          : 'Name must not exceed 80 characters.'
+      );
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      setSubmitError(
+        currentLang === 'ja'
+          ? '正しいメールアドレス形式を入力してください。'
+          : currentLang === 'ko'
+          ? '올바른 이메일 주소를 입력해 주세요.'
+          : 'Please enter a valid email address.'
+      );
+      return;
+    }
+
+    if (trimmedPhone.length > 30) {
+      setSubmitError(
+        currentLang === 'ja'
+          ? '電話番号は30文字以内でご入力ください。'
+          : currentLang === 'ko'
+          ? '전화번호는 30자 이내로 입력해 주세요.'
+          : 'Phone number must not exceed 30 characters.'
+      );
+      return;
+    }
+
+    if (trimmedMessage.length > 2000) {
+      setSubmitError(
+        currentLang === 'ja'
+          ? 'お問い合わせ内容は2,000文字以内でご入力ください。'
+          : currentLang === 'ko'
+          ? '문의 내용은 2,000자 이내로 입력해 주세요.'
+          : 'Message must not exceed 2,000 characters.'
+      );
+      return;
+    }
+
     setIsSubmitting(true);
 
-    // Save to persistent inquiry log
-    saveContactInquiry({
-      name: senderName.trim(),
-      phone: senderPhone.trim(),
-      email: senderEmail.trim(),
-      message: senderMessage.trim(),
-      targetEmail: targetEmail,
-    });
+    try {
+      const res = await submitContactInquiry({
+        name: trimmedName,
+        email: trimmedEmail,
+        phone: trimmedPhone,
+        message: trimmedMessage,
+        targetEmail,
+        _gotcha: honeypot,
+      });
 
-    // Construct mailto link with encoded subject & body
-    const subject = encodeURIComponent(
-      currentLang === 'ja'
-        ? `[Portfolio Inquiry] ${senderName.trim()} 様からのご連絡・お問い合わせ`
-        : currentLang === 'ko'
-        ? `[Portfolio Inquiry] ${senderName.trim()} 님의 채용·면접 및 문의`
-        : `[Portfolio Inquiry] Message from ${senderName.trim()}`
-    );
-    const notProvidedText = currentLang === 'ja' ? '未記入' : currentLang === 'ko' ? '미입력' : 'Not provided';
-    const headerTitle = currentLang === 'ja'
-      ? '【ポートフォリオ / 採用・面談お問い合わせ】'
-      : currentLang === 'ko'
-      ? '【포트폴리오 / 채용·면접 문의】'
-      : '【Portfolio / Inquiry & Opportunities】';
-    const senderLabel = currentLang === 'ja' ? '送信者' : currentLang === 'ko' ? '이름' : 'From';
-    const phoneLabel = currentLang === 'ja' ? '電話番号' : currentLang === 'ko' ? '전화번호' : 'Phone';
-    const replyLabel = currentLang === 'ja' ? '返信先メール' : currentLang === 'ko' ? '이메일' : 'Reply-to';
-    const recipientLabel = currentLang === 'ja' ? '宛先' : currentLang === 'ko' ? '수신인' : 'Recipient';
-    const messageLabel = currentLang === 'ja' ? 'お問い合わせ内容' : currentLang === 'ko' ? '문의 내용' : 'Message';
-
-    const bodyText = encodeURIComponent(
-      `${headerTitle}\n\n` +
-      `■ ${senderLabel}: ${senderName.trim()}\n` +
-      `■ ${phoneLabel}: ${senderPhone.trim() || notProvidedText}\n` +
-      `■ ${replyLabel}: ${senderEmail.trim()}\n` +
-      `■ ${recipientLabel}: ${targetEmail}\n\n` +
-      `■ ${messageLabel}:\n${senderMessage.trim()}\n\n` +
-      `---\nHAN DAHOON Portfolio Contact System`
-    );
-
-    const mailtoUrl = `mailto:${targetEmail}?subject=${subject}&body=${bodyText}`;
-
-    // Trigger mail client safely
-    window.location.href = mailtoUrl;
-
-    setLastSentEmail(targetEmail);
-    setIsSubmitting(false);
-    setSubmitSuccess(true);
+      if (res && res.success) {
+        setLastSentEmail(targetEmail);
+        setSubmitSuccess(true);
+        setSubmitError(null);
+      } else {
+        throw new Error('Server returned unsuccessful status');
+      }
+    } catch (err: any) {
+      console.error('Contact inquiry submission failed:', err);
+      const fallbackMsg =
+        currentLang === 'ja'
+          ? 'お問い合わせの送信に失敗しました。時間をおいて再度お試しいただくか、直接メールでご連絡ください。'
+          : currentLang === 'ko'
+          ? '문의 접수에 실패했습니다. 잠시 후 다시 시도해 주시거나 아래 이메일로 직접 연락해 주세요.'
+          : 'Failed to submit inquiry. Please try again later or contact directly via email.';
+      setSubmitError(err?.message || fallbackMsg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleResetForm = () => {
@@ -125,6 +162,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
     setSenderPhone('');
     setSenderEmail('');
     setSenderMessage('');
+    setHoneypot('');
+    setSubmitError(null);
     setSubmitSuccess(false);
   };
 
@@ -310,16 +349,20 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                   <div>
                     <h4 className="text-lg font-serif-jp text-[#1F1E1D] font-medium">
                       {currentLang === 'ja'
-                        ? '送信完了 / メールアプリ連携'
+                        ? 'お問い合わせを受け付けました'
                         : currentLang === 'ko'
-                        ? '전송 완료 / 메일 앱 연동'
-                        : 'Message Sent Successfully'}
+                        ? '문의가 안전하게 접수되었습니다'
+                        : 'Inquiry Submitted Successfully'}
                     </h4>
                     <p className="text-xs text-[#635B50] mt-1.5 max-w-md mx-auto leading-relaxed">
-                      {siteContact.sentSuccess[currentLang] || siteContact.sentSuccess['ja']}
+                      {currentLang === 'ja'
+                        ? 'お問い合わせ内容が安全に保存され、管理者へ通知されました。内容を確認のうえ、折り返しご連絡いたします。'
+                        : currentLang === 'ko'
+                        ? '문의 내용이 안전하게 저장되고 관리자에게 실시간 알림이 전달되었습니다. 확인 후 신속히 회신드리겠습니다.'
+                        : 'Your inquiry has been safely saved and notified to the administrator. We will get back to you shortly.'}
                     </p>
                     <p className="text-[11px] text-[#8C8477] font-mono mt-1">
-                      {currentLang === 'ja' ? '受信先: ' : currentLang === 'ko' ? '수신 이메일: ' : 'Recipient: '}{lastSentEmail}
+                      {currentLang === 'ja' ? '通知先: ' : currentLang === 'ko' ? '알림 수신처: ' : 'Notification sent to: '}{lastSentEmail}
                     </p>
                   </div>
                   <div className="pt-2 flex flex-col sm:flex-row gap-2 justify-center">
@@ -337,6 +380,32 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                 </div>
               ) : (
                 <form onSubmit={handleSubmitInquiry} className="space-y-4.5">
+                  {/* Honeypot field for bot spam prevention */}
+                  <div style={{ display: 'none', position: 'absolute', left: '-9999px' }} aria-hidden="true">
+                    <label htmlFor="inquiry_hp_field">Website / Gotcha</label>
+                    <input
+                      type="text"
+                      id="inquiry_hp_field"
+                      name="_gotcha"
+                      tabIndex={-1}
+                      autoComplete="off"
+                      value={honeypot}
+                      onChange={(e) => setHoneypot(e.target.value)}
+                    />
+                  </div>
+
+                  {submitError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2.5 text-xs text-red-800">
+                      <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                      <div className="leading-relaxed">
+                        <span className="font-semibold block mb-0.5">
+                          {currentLang === 'ja' ? '送信エラー' : currentLang === 'ko' ? '전송 오류' : 'Submission Error'}
+                        </span>
+                        <span>{submitError}</span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Name field */}
                   <div>
                     <label className="block text-xs font-medium text-[#4A443C] mb-1">
@@ -349,10 +418,12 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                     <input
                       type="text"
                       required
+                      maxLength={80}
+                      disabled={isSubmitting}
                       value={senderName}
                       onChange={(e) => setSenderName(e.target.value)}
                       placeholder={siteContact.namePlaceholder[currentLang] || siteContact.namePlaceholder['ja']}
-                      className="w-full px-3.5 py-2 text-sm bg-[#FAF8F5] border border-[#DDD5C7] rounded focus:outline-none focus:border-[#634832] transition-colors"
+                      className="w-full px-3.5 py-2 text-sm bg-[#FAF8F5] border border-[#DDD5C7] rounded focus:outline-none focus:border-[#634832] transition-colors disabled:opacity-60"
                     />
                   </div>
 
@@ -368,10 +439,12 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                       </label>
                       <input
                         type="tel"
+                        maxLength={30}
+                        disabled={isSubmitting}
                         value={senderPhone}
                         onChange={(e) => setSenderPhone(e.target.value)}
                         placeholder={siteContact.phonePlaceholder[currentLang] || siteContact.phonePlaceholder['ja']}
-                        className="w-full px-3.5 py-2 text-sm bg-[#FAF8F5] border border-[#DDD5C7] rounded focus:outline-none focus:border-[#634832] transition-colors"
+                        className="w-full px-3.5 py-2 text-sm bg-[#FAF8F5] border border-[#DDD5C7] rounded focus:outline-none focus:border-[#634832] transition-colors disabled:opacity-60"
                       />
                     </div>
 
@@ -387,10 +460,12 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                       <input
                         type="email"
                         required
+                        maxLength={120}
+                        disabled={isSubmitting}
                         value={senderEmail}
                         onChange={(e) => setSenderEmail(e.target.value)}
                         placeholder={siteContact.emailPlaceholder[currentLang] || siteContact.emailPlaceholder['ja']}
-                        className="w-full px-3.5 py-2 text-sm bg-[#FAF8F5] border border-[#DDD5C7] rounded focus:outline-none focus:border-[#634832] transition-colors"
+                        className="w-full px-3.5 py-2 text-sm bg-[#FAF8F5] border border-[#DDD5C7] rounded focus:outline-none focus:border-[#634832] transition-colors disabled:opacity-60"
                       />
                     </div>
                   </div>
@@ -407,10 +482,12 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                     <textarea
                       required
                       rows={5}
+                      maxLength={2000}
+                      disabled={isSubmitting}
                       value={senderMessage}
                       onChange={(e) => setSenderMessage(e.target.value)}
                       placeholder={siteContact.messagePlaceholder[currentLang] || siteContact.messagePlaceholder['ja']}
-                      className="w-full px-3.5 py-2 text-sm bg-[#FAF8F5] border border-[#DDD5C7] rounded focus:outline-none focus:border-[#634832] transition-colors leading-relaxed"
+                      className="w-full px-3.5 py-2 text-sm bg-[#FAF8F5] border border-[#DDD5C7] rounded focus:outline-none focus:border-[#634832] transition-colors leading-relaxed disabled:opacity-60"
                     />
                   </div>
 
@@ -430,10 +507,10 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                     </button>
                     <p className="text-[11px] text-[#8C8477] text-center mt-2">
                       {currentLang === 'ja'
-                        ? `※ 送信ボタンを押すと、登録メール (${targetEmail}) 宛てに即時転送されます。`
+                        ? `※ 送信後、メッセージは安全に保存され、管理者（${targetEmail}）へメール通知されます。`
                         : currentLang === 'ko'
-                        ? `※ 전송 버튼 클릭 시 등록된 이메일(${targetEmail})로 즉시 연결·발송됩니다.`
-                        : `* Messages route directly to the designated recipient (${targetEmail}).`}
+                        ? `※ 전송 시 문의가 안전하게 영구 저장되며, 관리자(${targetEmail})에게 실시간 이메일 알림이 전달됩니다.`
+                        : `* Inquiries are securely saved and automatically notified to the administrator (${targetEmail}).`}
                     </p>
                   </div>
                 </form>

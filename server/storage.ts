@@ -327,6 +327,70 @@ export const portfolioStorage = {
     return inquiry;
   },
 
+  async deleteContactInquiry(id: string): Promise<boolean> {
+    if (simulateStorageFailureForTest) {
+      throw new Error('Simulated persistent storage failure on write');
+    }
+
+    if (isProductionEnvironment()) {
+      const store = await getNetlifyBlobStore();
+      if (!store) {
+        throw new Error('Netlify Blobs store is uninitialized in production.');
+      }
+      const raw = await store.get('inquiries', { type: 'json' });
+      const list = Array.isArray(raw) ? raw : [];
+      const updated = list.filter((item: any) => item.id !== id);
+      await store.setJSON('inquiries', updated);
+      return true;
+    }
+
+    const local = readLocalStore();
+    const list = local.inquiries || [];
+    local.inquiries = list.filter((item: any) => item.id !== id);
+    local.updatedAt = new Date().toISOString();
+    writeLocalStore(local);
+    return true;
+  },
+
+  async updateContactInquiry(id: string, updates: Record<string, any>): Promise<any> {
+    if (simulateStorageFailureForTest) {
+      throw new Error('Simulated persistent storage failure on write');
+    }
+
+    if (isProductionEnvironment()) {
+      const store = await getNetlifyBlobStore();
+      if (!store) {
+        throw new Error('Netlify Blobs store is uninitialized in production.');
+      }
+      const raw = await store.get('inquiries', { type: 'json' });
+      const list = Array.isArray(raw) ? raw : [];
+      let found: any = null;
+      const updated = list.map((item: any) => {
+        if (item.id === id) {
+          found = { ...item, ...updates };
+          return found;
+        }
+        return item;
+      });
+      await store.setJSON('inquiries', updated);
+      return found;
+    }
+
+    const local = readLocalStore();
+    const list = local.inquiries || [];
+    let found: any = null;
+    local.inquiries = list.map((item: any) => {
+      if (item.id === id) {
+        found = { ...item, ...updates };
+        return found;
+      }
+      return item;
+    });
+    local.updatedAt = new Date().toISOString();
+    writeLocalStore(local);
+    return found;
+  },
+
   async clearContactInquiries(): Promise<void> {
     if (simulateStorageFailureForTest) {
       throw new Error('Simulated persistent storage failure on write');

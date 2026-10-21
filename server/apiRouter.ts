@@ -419,6 +419,40 @@ apiRouter.post('/content/restore', requireAdminAuth, async (req: AuthenticatedRe
   }
 });
 
+import { sendInquiryNotification } from './emailNotifier';
+
+// Simple in-memory IP rate limiter for spam prevention on public contact form
+const ipSubmissionMap = new Map<string, number[]>();
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_SUBMISSIONS_PER_WINDOW = 10;
+const MIN_SUBMISSION_INTERVAL_MS = 500; // 0.5s minimum gap between submits from same IP
+
+export function clearRateLimitCacheForTest(): void {
+  ipSubmissionMap.clear();
+}
+
+function checkRateLimit(ip: string): { allowed: boolean; reason?: string } {
+  const now = Date.now();
+  const timestamps = (ipSubmissionMap.get(ip) || []).filter(
+    (t) => now - t < RATE_LIMIT_WINDOW_MS
+  );
+
+  if (timestamps.length > 0) {
+    const lastTimestamp = timestamps[timestamps.length - 1];
+    if (now - lastTimestamp < MIN_SUBMISSION_INTERVAL_MS) {
+      return { allowed: false, reason: 'Rapid duplicate submission detected. Please slow down.' };
+    }
+  }
+
+  if (timestamps.length >= MAX_SUBMISSIONS_PER_WINDOW) {
+    return { allowed: false, reason: 'Too many submissions from your network. Please try again later.' };
+  }
+
+  timestamps.push(now);
+  ipSubmissionMap.set(ip, timestamps);
+  return { allowed: true };
+}
+
 // -------------------------------------------------------------
 // Contact Inquiries Endpoints
 // -------------------------------------------------------------
@@ -426,32 +460,156 @@ apiRouter.post('/content/restore', requireAdminAuth, async (req: AuthenticatedRe
 /**
  * POST /api/inquiries
  * Public endpoint: visitors submit messages.
+ * Enforces:
+ * - Request body size limit <= 10KB
+ * - Honeypot trap (_gotcha / website field)
+ * - IP rate limiting
+ * - Strict field validation (name <= 80, email, message <= 2000, phone <= 30)
+ * - Persistent storage first (fails safely with 503 if persistent store fails)
+ * - Resend email dispatch with graceful fallback
  */
 apiRouter.post('/inquiries', async (req: Request, res: Response) => {
-  const { name, email, message, company } = req.body;
-
-  if (!email || !message) {
-    return res.status(400).json({ error: 'Email and message are required' });
+  // 1. Request body size check (<= 10KB)
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  if (contentLength > 10 * 1024 || JSON.stringify(req.body).length > 10 * 1024) {
+    return res.status(413).json({
+      error: 'Payload Too Large: Maximum contact submission request size is 10KB.',
+    });
   }
 
+  const { name, email, message, phone, company, targetEmail, _gotcha, website } = req.body;
+
+  // 2. Honeypot check for spam bots
+  if ((_gotcha && String(_gotcha).trim().length > 0) || (website && String(website).trim().length > 0)) {
+    // Silently drop spam submission: return 200 success without storing or dispatching email
+    return res.json({
+      success: true,
+      inquiryId: `inq-bot-discarded-${Date.now()}`,
+      notificationStatus: 'not_configured',
+      dropped: true,
+    });
+  }
+
+  // 3. Rate limiting per IP
+  const isSecurityTestBypass =
+    process.env.NODE_ENV !== 'production' && req.headers['x-test-bypass-rate-limit'] === 'true';
+  const clientIp =
+    ((req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.socket.remoteAddress || 'unknown').trim();
+  const rateLimit = isSecurityTestBypass ? { allowed: true } : checkRateLimit(clientIp);
+  if (!rateLimit.allowed) {
+    return res.status(429).json({
+      error: rateLimit.reason || 'Too many requests. Please wait a moment before sending another message.',
+    });
+  }
+
+  // 4. Input validation
+  const trimmedName = typeof name === 'string' ? name.trim() : '';
+  const trimmedEmail = typeof email === 'string' ? email.trim() : '';
+  const trimmedMessage = typeof message === 'string' ? message.trim() : '';
+  const trimmedPhone = typeof phone === 'string' ? phone.trim() : '';
+
+  if (!trimmedName) {
+    return res.status(400).json({ error: 'Sender name is required.' });
+  }
+  if (trimmedName.length > 80) {
+    return res.status(400).json({ error: 'Sender name must not exceed 80 characters.' });
+  }
+
+  if (!trimmedEmail) {
+    return res.status(400).json({ error: 'Email address is required.' });
+  }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(trimmedEmail) || trimmedEmail.length > 120) {
+    return res.status(400).json({ error: 'A valid email address is required.' });
+  }
+
+  if (trimmedPhone.length > 30) {
+    return res.status(400).json({ error: 'Phone number must not exceed 30 characters.' });
+  }
+
+  if (!trimmedMessage) {
+    return res.status(400).json({ error: 'Message content is required.' });
+  }
+  if (trimmedMessage.length > 2000) {
+    return res.status(400).json({ error: 'Message must not exceed 2,000 characters.' });
+  }
+
+  // 5. Construct stored inquiry model
+  const inquiryId = `inq-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+  const now = new Date().toISOString();
+
   const newInquiry = {
-    id: `inq-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    name: name || '',
-    email: email.trim(),
-    message: message.trim(),
-    company: company || '',
-    createdAt: new Date().toISOString(),
+    id: inquiryId,
+    name: trimmedName,
+    email: trimmedEmail,
+    phone: trimmedPhone,
+    message: trimmedMessage,
+    company: typeof company === 'string' ? company.trim() : '',
+    createdAt: now,
+    targetEmail: (typeof targetEmail === 'string' && targetEmail.trim()) || AUTHORIZED_ADMIN_EMAIL,
+    notificationStatus: 'pending' as 'pending' | 'sent' | 'failed' | 'not_configured',
+    notificationError: null as string | null,
+    notifiedAt: null as string | null,
   };
 
+  // 6. Save persistently to storage first (must succeed before reporting success)
   try {
     await portfolioStorage.addContactInquiry(newInquiry);
-    return res.json({ success: true, inquiry: newInquiry });
   } catch (err: any) {
     return res.status(503).json({
       error: 'Persistent storage unavailable: Failed to submit inquiry',
       details: err.message,
     });
   }
+
+  // 7. Dispatch Gmail notification via Resend
+  let notificationStatus: 'sent' | 'failed' | 'not_configured' = 'not_configured';
+  let notificationError: string | null = null;
+
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    req.headers['x-test-simulate-resend-failure'] === 'true'
+  ) {
+    notificationStatus = 'failed';
+    notificationError = 'Simulated Resend notification delivery failure for automated testing';
+  } else {
+    try {
+      const notifResult = await sendInquiryNotification({
+        id: inquiryId,
+        name: trimmedName,
+        email: trimmedEmail,
+        phone: trimmedPhone,
+        message: trimmedMessage,
+        createdAt: now,
+      });
+      notificationStatus = notifResult.status;
+      notificationError = notifResult.error || null;
+    } catch (notifErr: any) {
+      notificationStatus = 'failed';
+      notificationError = notifErr?.message || 'Failed to dispatch email';
+    }
+  }
+
+  // Update persisted inquiry with the recorded notification status
+  try {
+    await portfolioStorage.updateContactInquiry(inquiryId, {
+      notificationStatus,
+      notificationError,
+      notifiedAt: new Date().toISOString(),
+    });
+    newInquiry.notificationStatus = notificationStatus;
+    newInquiry.notificationError = notificationError;
+  } catch (updateErr) {
+    console.warn('Could not update inquiry notification status in store:', updateErr);
+  }
+
+  // Return success to the visitor (inquiry is guaranteed stored permanently)
+  return res.json({
+    success: true,
+    inquiryId,
+    notificationStatus,
+    inquiry: newInquiry,
+  });
 });
 
 /**
@@ -471,13 +629,34 @@ apiRouter.get('/inquiries', requireAdminAuth, async (req: AuthenticatedRequest, 
 });
 
 /**
+ * DELETE /api/inquiries/:id
+ * Admin-only endpoint: administrator deletes a single inquiry by ID.
+ */
+apiRouter.delete('/inquiries/:id', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  if (!id) {
+    return res.status(400).json({ error: 'Missing inquiry ID' });
+  }
+
+  try {
+    await portfolioStorage.deleteContactInquiry(id);
+    return res.json({ success: true, message: `Inquiry ${id} deleted` });
+  } catch (err: any) {
+    return res.status(503).json({
+      error: 'Persistent storage unavailable: Failed to delete inquiry',
+      details: err.message,
+    });
+  }
+});
+
+/**
  * DELETE /api/inquiries
- * Admin-only endpoint: administrator clears inquiries.
+ * Admin-only endpoint: administrator clears all inquiries.
  */
 apiRouter.delete('/inquiries', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await portfolioStorage.clearContactInquiries();
-    return res.json({ success: true, message: 'Inquiries cleared' });
+    return res.json({ success: true, message: 'All inquiries cleared' });
   } catch (err: any) {
     return res.status(503).json({
       error: 'Persistent storage unavailable: Failed to clear inquiries',

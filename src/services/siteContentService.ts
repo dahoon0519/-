@@ -471,7 +471,42 @@ export async function resetSiteContent(): Promise<SiteContent> {
 }
 
 /**
- * Saves contact inquiry sent through the CONTACT form.
+ * Submits contact inquiry directly to the server with CSRF protection and persistent storage.
+ * Does NOT rely on localStorage as the primary inquiry database.
+ */
+export async function submitContactInquiry(
+  inquiry: {
+    name: string;
+    email: string;
+    phone?: string;
+    message: string;
+    company?: string;
+    targetEmail?: string;
+    _gotcha?: string;
+    website?: string;
+  }
+): Promise<{ success: boolean; inquiryId?: string; notificationStatus?: string }> {
+  const res = await apiClient.post<{
+    success: boolean;
+    inquiryId?: string;
+    notificationStatus?: string;
+    inquiry?: ContactInquiry;
+  }>('/api/inquiries', inquiry);
+
+  // If server returns inquiry, optionally mirror to local cache for offline admin viewing
+  if (res && res.inquiry) {
+    try {
+      const existing = getContactInquiries();
+      const updated = [res.inquiry, ...existing.filter((item) => item.id !== res.inquiry?.id)];
+      localStorage.setItem(INQUIRIES_KEY, JSON.stringify(updated));
+    } catch {}
+  }
+
+  return res;
+}
+
+/**
+ * Backward compatibility alias for submitContactInquiry
  */
 export function saveContactInquiry(inquiry: Omit<ContactInquiry, 'id' | 'createdAt'>): ContactInquiry {
   const newInquiry: ContactInquiry = {
@@ -480,24 +515,38 @@ export function saveContactInquiry(inquiry: Omit<ContactInquiry, 'id' | 'created
     createdAt: new Date().toISOString(),
   };
 
-  // Submit to server endpoint
-  apiClient.post('/api/inquiries', inquiry).catch((err) => {
+  submitContactInquiry(inquiry).catch((err) => {
     console.warn('Failed to submit inquiry to server:', err);
   });
-
-  try {
-    const existing = getContactInquiries();
-    const updated = [newInquiry, ...existing];
-    localStorage.setItem(INQUIRIES_KEY, JSON.stringify(updated));
-  } catch (e) {
-    console.error('Error saving inquiry locally:', e);
-  }
 
   return newInquiry;
 }
 
 /**
- * Gets all saved contact inquiries for Admin.
+ * Fetches all received contact inquiries from the authoritative server API (Admin only).
+ */
+export async function fetchContactInquiries(): Promise<ContactInquiry[]> {
+  if (!authService.isAuthorizedAdmin()) {
+    return [];
+  }
+
+  try {
+    const res = await apiClient.get<{ inquiries?: ContactInquiry[] }>('/api/inquiries');
+    if (res && Array.isArray(res.inquiries)) {
+      try {
+        localStorage.setItem(INQUIRIES_KEY, JSON.stringify(res.inquiries));
+      } catch {}
+      return res.inquiries;
+    }
+  } catch (err: any) {
+    console.warn('Failed to fetch inquiries from server, falling back to local cache:', err.message);
+  }
+
+  return getContactInquiries();
+}
+
+/**
+ * Gets cached contact inquiries from local storage (fallback).
  */
 export function getContactInquiries(): ContactInquiry[] {
   try {
@@ -509,16 +558,31 @@ export function getContactInquiries(): ContactInquiry[] {
 }
 
 /**
- * Clear contact inquiries.
+ * Deletes a single contact inquiry by ID (Admin only).
  */
-export function clearContactInquiries(): void {
+export async function deleteContactInquiry(id: string): Promise<void> {
+  if (!authService.isAuthorizedAdmin()) {
+    throw new Error('권한 오류: 관리자만 문의를 삭제할 수 있습니다.');
+  }
+
+  await apiClient.delete(`/api/inquiries/${id}`);
+
+  try {
+    const existing = getContactInquiries();
+    const updated = existing.filter((item) => item.id !== id);
+    localStorage.setItem(INQUIRIES_KEY, JSON.stringify(updated));
+  } catch {}
+}
+
+/**
+ * Clear all contact inquiries (Admin only).
+ */
+export async function clearContactInquiries(): Promise<void> {
   if (!authService.isAuthorizedAdmin()) {
     throw new Error('권한 오류: 관리자만 문의 목록을 삭제할 수 있습니다.');
   }
 
-  apiClient.delete('/api/inquiries').catch((err) => {
-    console.warn('Failed to clear inquiries on server:', err);
-  });
+  await apiClient.delete('/api/inquiries');
 
   try {
     localStorage.removeItem(INQUIRIES_KEY);

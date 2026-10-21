@@ -1274,7 +1274,11 @@ export default function App() {
       {!isAdmin ? (
         <button
           onClick={() => setIsAdminModalOpen(true)}
-          className="fixed bottom-2.5 right-3 z-30 text-[10px] sm:text-[11px] text-[#A8A196]/40 hover:text-[#524B40] transition-colors duration-200 cursor-pointer select-none font-sans flex items-center gap-1 opacity-70 hover:opacity-100"
+          style={{
+            bottom: 'max(20px, calc(20px + env(safe-area-inset-bottom, 0px)))',
+            left: 'max(20px, calc(20px + env(safe-area-inset-left, 0px)))',
+          }}
+          className="fixed z-30 text-[10px] sm:text-[11px] text-[#A8A196]/40 hover:text-[#524B40] transition-colors duration-200 cursor-pointer select-none font-sans flex items-center gap-1 opacity-70 hover:opacity-100"
           title={
             currentLang === 'ja'
               ? '管理者ログイン'
@@ -1293,7 +1297,13 @@ export default function App() {
           </span>
         </button>
       ) : (
-        <div className="fixed bottom-2.5 right-3 z-30 flex items-center gap-2 bg-[#2D241E]/92 backdrop-blur-xs text-white text-[11px] px-3 py-1 rounded-full shadow-lg font-sans border border-[#524538]">
+        <div
+          style={{
+            bottom: 'max(20px, calc(20px + env(safe-area-inset-bottom, 0px)))',
+            left: 'max(20px, calc(20px + env(safe-area-inset-left, 0px)))',
+          }}
+          className="fixed z-30 flex items-center gap-2 bg-[#2D241E]/92 backdrop-blur-xs text-white text-[11px] px-3 py-1 rounded-full shadow-lg font-sans border border-[#524538]"
+        >
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           <span className="font-mono text-[10px] text-amber-200">
             {adminUser?.email || authService.getAllowedAdminEmail()}

@@ -14,6 +14,12 @@ import {
   portfolioStorage,
   setSimulateStorageFailureForTest,
 } from '../server/storage';
+import {
+  setSimulateResendFailureForTest,
+  clearNotificationTestState,
+  escapeHtml,
+} from '../server/emailNotifier';
+import { clearRateLimitCacheForTest } from '../server/apiRouter';
 
 const BASE_URL = 'http://localhost:3000';
 
@@ -390,6 +396,248 @@ async function runSecurityTests() {
     assert(false, 'Section 6 execution error', err.message);
   }
 
+  // -------------------------------------------------------------------------
+  // SECTION 7: Persistent Contact Inquiries, Abuse Prevention & Resend Relay
+  // -------------------------------------------------------------------------
+  console.log('\n--- Section 7: Persistent Inquiries, Spam Defense & Resend Delivery ---');
+  try {
+    clearRateLimitCacheForTest();
+    clearNotificationTestState();
+
+    const validAdminToken = createSignedSessionToken({
+      email: AUTHORIZED_ADMIN_EMAIL,
+      name: 'HAN DAHOON',
+    });
+    const adminCookieHeader = `${csrfCookie}; admin_session=${validAdminToken}`;
+
+    const testHeaders = {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': csrfTokenValue,
+      'X-Test-Bypass-Rate-Limit': 'true',
+      Cookie: csrfCookie,
+    };
+
+    // 7a. Valid inquiry submission succeeds and persists in storage
+    const testPhone = '+81-90-1234-5678';
+    const testInquiryPayload = {
+      name: 'Coffee Partner',
+      email: 'partner@specialty.coffee',
+      phone: testPhone,
+      message: 'Interested in collaborating on a pop-up filter coffee bar in Tokyo.',
+      targetEmail: AUTHORIZED_ADMIN_EMAIL,
+    };
+
+    const submitRes = await fetch(`${BASE_URL}/api/inquiries`, {
+      method: 'POST',
+      headers: testHeaders,
+      body: JSON.stringify(testInquiryPayload),
+    });
+    const submitData = await submitRes.json();
+    assert(
+      submitRes.status === 200 && submitData.success === true && Boolean(submitData.inquiryId),
+      'Valid inquiry submission succeeds and returns inquiryId'
+    );
+    const createdInquiryId = submitData.inquiryId;
+
+    // 7b. Inquiries can be retrieved by authenticated administrator
+    const adminGetInqRes = await fetch(`${BASE_URL}/api/inquiries`, {
+      headers: {
+        Cookie: adminCookieHeader,
+      },
+    });
+    const adminGetInqData = await adminGetInqRes.json();
+    const retrievedInquiry = (adminGetInqData.inquiries || []).find(
+      (inq: any) => inq.id === createdInquiryId
+    );
+    assert(
+      adminGetInqRes.status === 200 && Boolean(retrievedInquiry),
+      'Authenticated administrator can list and retrieve persisted inquiries from backend'
+    );
+
+    // 7c. Phone number is properly preserved and displayed
+    assert(
+      retrievedInquiry?.phone === testPhone,
+      'Phone number is accurately preserved in persisted inquiry record'
+    );
+
+    // 7d. Notification status is recorded and returned to admin
+    assert(
+      ['sent', 'failed', 'not_configured', 'pending'].includes(retrievedInquiry?.notificationStatus),
+      `Inquiry notification status is recorded on model (status: ${retrievedInquiry?.notificationStatus})`
+    );
+
+    // 7e. Unauthenticated requests to GET /api/inquiries return 401 Unauthorized
+    const unauthInqRes = await fetch(`${BASE_URL}/api/inquiries`);
+    assert(
+      unauthInqRes.status === 401,
+      'Unauthenticated requests to GET /api/inquiries return 401 Unauthorized'
+    );
+
+    // 7f. Honeypot trap silently drops spam submissions without storing
+    const storeCountBefore = (await portfolioStorage.getContactInquiries()).length;
+    const spamRes = await fetch(`${BASE_URL}/api/inquiries`, {
+      method: 'POST',
+      headers: testHeaders,
+      body: JSON.stringify({
+        name: 'Spam Bot',
+        email: 'bot@spam.com',
+        message: 'Cheap watches for sale!',
+        _gotcha: 'http://malicious-bot-link.ru',
+      }),
+    });
+    const spamData = await spamRes.json();
+    const storeCountAfter = (await portfolioStorage.getContactInquiries()).length;
+    assert(
+      spamRes.status === 200 && spamData.dropped === true && storeCountBefore === storeCountAfter,
+      'Honeypot trap silently drops bot submissions without persisting to storage or emailing'
+    );
+
+    // 7g. Input validation tests:
+    // Missing name
+    const noNameRes = await fetch(`${BASE_URL}/api/inquiries`, {
+      method: 'POST',
+      headers: testHeaders,
+      body: JSON.stringify({ name: '', email: 'valid@example.com', message: 'Hello' }),
+    });
+    assert(noNameRes.status === 400, 'Validation rejects missing sender name (400 Bad Request)');
+
+    // Missing message
+    const noMsgRes = await fetch(`${BASE_URL}/api/inquiries`, {
+      method: 'POST',
+      headers: testHeaders,
+      body: JSON.stringify({ name: 'Valid Name', email: 'valid@example.com', message: '' }),
+    });
+    assert(noMsgRes.status === 400, 'Validation rejects missing message (400 Bad Request)');
+
+    // Invalid email format
+    const badEmailRes = await fetch(`${BASE_URL}/api/inquiries`, {
+      method: 'POST',
+      headers: testHeaders,
+      body: JSON.stringify({ name: 'Valid Name', email: 'not-a-valid-email', message: 'Hello' }),
+    });
+    assert(badEmailRes.status === 400, 'Validation rejects invalid email format (400 Bad Request)');
+
+    // Oversized name (> 80 chars)
+    const longNameRes = await fetch(`${BASE_URL}/api/inquiries`, {
+      method: 'POST',
+      headers: testHeaders,
+      body: JSON.stringify({ name: 'A'.repeat(85), email: 'valid@example.com', message: 'Hello' }),
+    });
+    assert(longNameRes.status === 400, 'Validation rejects oversized sender name (> 80 characters)');
+
+    // Oversized message (> 2000 chars)
+    const longMsgRes = await fetch(`${BASE_URL}/api/inquiries`, {
+      method: 'POST',
+      headers: testHeaders,
+      body: JSON.stringify({ name: 'Valid Name', email: 'valid@example.com', message: 'X'.repeat(2100) }),
+    });
+    assert(longMsgRes.status === 400, 'Validation rejects oversized message (> 2,000 characters)');
+
+    // Payload size limit (> 10KB)
+    const largePayloadRes = await fetch(`${BASE_URL}/api/inquiries`, {
+      method: 'POST',
+      headers: testHeaders,
+      body: JSON.stringify({ name: 'Valid Name', email: 'valid@example.com', message: 'Z'.repeat(12000) }),
+    });
+    assert(largePayloadRes.status === 413, 'Public inquiry endpoint strictly enforces 10KB request size limit (413 Payload Too Large)');
+
+    // 7h. Inquiry persists even when Resend notification fails
+    const failureRes = await fetch(`${BASE_URL}/api/inquiries`, {
+      method: 'POST',
+      headers: {
+        ...testHeaders,
+        'X-Test-Simulate-Resend-Failure': 'true',
+      },
+      body: JSON.stringify({
+        name: 'Resilient Visitor',
+        email: 'resilient@example.com',
+        message: 'This message must be saved even if email notification delivery fails.',
+      }),
+    });
+    const failureData = await failureRes.json();
+
+    assert(
+      failureRes.status === 200 && failureData.success === true,
+      'Visitor receives 200 success response even when email notification delivery fails'
+    );
+
+    // Verify the inquiry was nonetheless safely saved in backend storage
+    const allInquiries = await portfolioStorage.getContactInquiries();
+    const resilientSaved = allInquiries.find((i: any) => i.id === failureData.inquiryId);
+    assert(
+      Boolean(resilientSaved) && resilientSaved.notificationStatus === 'failed',
+      'Inquiry was successfully stored in persistent storage with notificationStatus = failed'
+    );
+
+    // 7i. Single inquiry deletion works correctly
+    const delRes = await fetch(`${BASE_URL}/api/inquiries/${createdInquiryId}`, {
+      method: 'DELETE',
+      headers: {
+        'X-CSRF-Token': csrfTokenValue,
+        Cookie: adminCookieHeader,
+      },
+    });
+    assert(delRes.status === 200, 'Administrator can delete single inquiry by ID');
+
+    const inquiriesAfterDelete = await portfolioStorage.getContactInquiries();
+    const isDeleted = !inquiriesAfterDelete.some((inq: any) => inq.id === createdInquiryId);
+    assert(isDeleted, 'Deleted inquiry is verified removed from persistent store');
+
+    // Also clean up resilient test inquiry
+    if (failureData.inquiryId) {
+      await portfolioStorage.deleteContactInquiry(failureData.inquiryId);
+    }
+
+    // 7j. Rate limiting throttles rapid repeat submissions from same IP
+    const testIp = '198.51.100.42';
+    const rlFirst = await fetch(`${BASE_URL}/api/inquiries`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfTokenValue,
+        'X-Forwarded-For': testIp,
+        Cookie: csrfCookie,
+      },
+      body: JSON.stringify({ name: 'Fast User', email: 'fast@example.com', message: 'Hello 1' }),
+    });
+    const rlSecond = await fetch(`${BASE_URL}/api/inquiries`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfTokenValue,
+        'X-Forwarded-For': testIp,
+        Cookie: csrfCookie,
+      },
+      body: JSON.stringify({ name: 'Fast User', email: 'fast@example.com', message: 'Hello 2' }),
+    });
+    assert(
+      rlFirst.status === 200 && rlSecond.status === 429,
+      'Rate limiting strictly throttles rapid duplicate submissions without bypass (429 Too Many Requests)',
+      `rlFirst=${rlFirst.status}, rlSecond=${rlSecond.status}`
+    );
+    if (rlFirst.ok) {
+      const rlFirstData = await rlFirst.json();
+      if (rlFirstData.inquiryId) await portfolioStorage.deleteContactInquiry(rlFirstData.inquiryId);
+    }
+
+    // 7k. HTML escaping prevents HTML injection in email bodies
+    const dangerousInput = '<script>alert("XSS")</script><b onmouseover="steal()">bold</b>';
+    const escaped = escapeHtml(dangerousInput);
+    assert(
+      !escaped.includes('<script>') && !escaped.includes('<b') && escaped.includes('&lt;script&gt;'),
+      'escapeHtml strictly sanitizes script tags and markup for email HTML output'
+    );
+
+    // 7l. API responses never leak secret keys or sensitive tokens
+    const jsonStringified = JSON.stringify(submitData) + JSON.stringify(failureData);
+    assert(
+      !jsonStringified.includes('re_') && !jsonStringified.includes('SESSION_SECRET'),
+      'Inquiry API responses never leak Resend API keys or session secrets'
+    );
+  } catch (err: any) {
+    assert(false, 'Section 7 execution error', err.message);
+  }
+
   console.log('\n====================================================');
   console.log(`TOTAL SECURITY TESTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('====================================================\n');
@@ -400,3 +648,4 @@ async function runSecurityTests() {
 }
 
 runSecurityTests();
+
