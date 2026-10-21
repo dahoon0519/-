@@ -21,10 +21,12 @@ const CSRF_COOKIE_NAME = 'XSRF-TOKEN';
 
 function getSessionCookieOptions() {
   const isProd = isProductionEnvironment();
+  const isPreviewHttps = Boolean(process.env.APP_URL?.startsWith('https://'));
+  const isSecure = isProd || isPreviewHttps;
   return {
     httpOnly: true,
-    secure: isProd,
-    sameSite: 'lax' as const,
+    secure: isSecure,
+    sameSite: (isPreviewHttps && !isProd ? 'none' : 'lax') as 'none' | 'lax',
     maxAge: 12 * 60 * 60 * 1000, // 12 hours
     path: '/',
   };
@@ -32,10 +34,12 @@ function getSessionCookieOptions() {
 
 function getCsrfCookieOptions() {
   const isProd = isProductionEnvironment();
+  const isPreviewHttps = Boolean(process.env.APP_URL?.startsWith('https://'));
+  const isSecure = isProd || isPreviewHttps;
   return {
     httpOnly: false, // Must be readable by client JS to set X-CSRF-Token header
-    secure: isProd,
-    sameSite: 'lax' as const,
+    secure: isSecure,
+    sameSite: (isPreviewHttps && !isProd ? 'none' : 'lax') as 'none' | 'lax',
     maxAge: 12 * 60 * 60 * 1000,
     path: '/',
   };
@@ -538,6 +542,25 @@ apiRouter.post('/inquiries', async (req: Request, res: Response) => {
   const inquiryId = `inq-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
   const now = new Date().toISOString();
 
+  // 5. Authoritative administrator-published recipient email
+  // Reads strictly from published SiteContent (never draft, and NEVER from visitor input)
+  let recipientEmail = (process.env.NOTIFY_EMAIL || AUTHORIZED_ADMIN_EMAIL).trim();
+  try {
+    const published = await portfolioStorage.getPublishedContent();
+    const publishedEmail =
+      published?.contact?.notificationEmail ||
+      published?.contact?.emailValue;
+    if (
+      typeof publishedEmail === 'string' &&
+      publishedEmail.trim().length > 0 &&
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(publishedEmail.trim())
+    ) {
+      recipientEmail = publishedEmail.trim();
+    }
+  } catch (contentErr) {
+    console.warn('Could not read published content for recipient email; falling back to NOTIFY_EMAIL:', contentErr);
+  }
+
   const newInquiry = {
     id: inquiryId,
     name: trimmedName,
@@ -546,7 +569,7 @@ apiRouter.post('/inquiries', async (req: Request, res: Response) => {
     message: trimmedMessage,
     company: typeof company === 'string' ? company.trim() : '',
     createdAt: now,
-    targetEmail: (typeof targetEmail === 'string' && targetEmail.trim()) || AUTHORIZED_ADMIN_EMAIL,
+    targetEmail: recipientEmail,
     notificationStatus: 'pending' as 'pending' | 'sent' | 'failed' | 'not_configured',
     notificationError: null as string | null,
     notifiedAt: null as string | null,
@@ -581,6 +604,7 @@ apiRouter.post('/inquiries', async (req: Request, res: Response) => {
         phone: trimmedPhone,
         message: trimmedMessage,
         createdAt: now,
+        recipientEmail,
       });
       notificationStatus = notifResult.status;
       notificationError = notifResult.error || null;
@@ -608,6 +632,7 @@ apiRouter.post('/inquiries', async (req: Request, res: Response) => {
     success: true,
     inquiryId,
     notificationStatus,
+    emailSent: notificationStatus === 'sent',
     inquiry: newInquiry,
   });
 });

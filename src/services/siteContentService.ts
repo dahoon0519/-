@@ -485,11 +485,12 @@ export async function submitContactInquiry(
     _gotcha?: string;
     website?: string;
   }
-): Promise<{ success: boolean; inquiryId?: string; notificationStatus?: string }> {
+): Promise<{ success: boolean; inquiryId?: string; notificationStatus?: string; emailSent?: boolean }> {
   const res = await apiClient.post<{
     success: boolean;
     inquiryId?: string;
     notificationStatus?: string;
+    emailSent?: boolean;
     inquiry?: ContactInquiry;
   }>('/api/inquiries', inquiry);
 

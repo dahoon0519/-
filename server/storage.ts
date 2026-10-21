@@ -100,6 +100,39 @@ function writeLocalStore(data: StorageData): void {
   }
 }
 
+const LEGACY_EMAIL = 'dhgh159030@gmail.com';
+const CURRENT_PUBLIC_EMAIL = 'dahoon0519@gmail.com';
+
+/**
+ * Sanitizes persisted SiteContent objects to ensure legacy email address is
+ * safely updated to the new official email address without touching or resetting
+ * any other user-customized fields, photos, or text.
+ */
+export function sanitizeSiteContent<T = any>(content: T): T {
+  if (!content || typeof content !== 'object') return content;
+  const cloned = JSON.parse(JSON.stringify(content));
+
+  if (cloned.contact) {
+    if (cloned.contact.emailValue === LEGACY_EMAIL || !cloned.contact.emailValue) {
+      cloned.contact.emailValue = CURRENT_PUBLIC_EMAIL;
+    }
+    if (cloned.contact.notificationEmail === LEGACY_EMAIL) {
+      cloned.contact.notificationEmail = CURRENT_PUBLIC_EMAIL;
+    }
+    if (!cloned.contact.notificationEmail && cloned.contact.emailValue) {
+      cloned.contact.notificationEmail = cloned.contact.emailValue;
+    }
+  }
+
+  if (cloned.profileInfo) {
+    if (cloned.profileInfo.email === LEGACY_EMAIL || !cloned.profileInfo.email) {
+      cloned.profileInfo.email = CURRENT_PUBLIC_EMAIL;
+    }
+  }
+
+  return cloned;
+}
+
 export const portfolioStorage = {
   async getPublishedContent(): Promise<any | null> {
     if (simulateStorageFailureForTest) {
@@ -113,7 +146,16 @@ export const portfolioStorage = {
           throw new Error('Netlify Blobs store is uninitialized in production.');
         }
         const raw = await store.get('published', { type: 'json' });
-        return raw || null;
+        if (raw) {
+          const sanitized = sanitizeSiteContent(raw);
+          if (raw.contact?.emailValue === LEGACY_EMAIL || raw.profileInfo?.email === LEGACY_EMAIL) {
+            store.setJSON('published', sanitized).catch((err: any) => {
+              console.warn('Auto-migrated legacy email in Netlify Blobs published store:', err?.message);
+            });
+          }
+          return sanitized;
+        }
+        return null;
       } catch (err: any) {
         throw new Error(
           `Persistent storage read failed: Unable to fetch published content from Netlify Blobs in production (${err.message}).`
@@ -122,7 +164,17 @@ export const portfolioStorage = {
     }
 
     // Local non-production development
-    return readLocalStore().published;
+    const raw = readLocalStore().published;
+    if (raw) {
+      const sanitized = sanitizeSiteContent(raw);
+      if (raw.contact?.emailValue === LEGACY_EMAIL || raw.profileInfo?.email === LEGACY_EMAIL) {
+        const local = readLocalStore();
+        local.published = sanitized;
+        writeLocalStore(local);
+      }
+      return sanitized;
+    }
+    return null;
   },
 
   async setPublishedContent(content: any): Promise<void> {
@@ -130,13 +182,15 @@ export const portfolioStorage = {
       throw new Error('Simulated persistent storage failure on write');
     }
 
+    const sanitized = sanitizeSiteContent(content);
+
     if (isProductionEnvironment()) {
       try {
         const store = await getNetlifyBlobStore();
         if (!store) {
           throw new Error('Netlify Blobs store is uninitialized in production.');
         }
-        await store.setJSON('published', content);
+        await store.setJSON('published', sanitized);
         return;
       } catch (err: any) {
         // DO NOT silently fall back to local disk in production!
@@ -148,7 +202,7 @@ export const portfolioStorage = {
 
     // In local development: write to local file store
     const local = readLocalStore();
-    local.published = content;
+    local.published = sanitized;
     local.updatedAt = new Date().toISOString();
     writeLocalStore(local);
   },
@@ -165,7 +219,16 @@ export const portfolioStorage = {
           throw new Error('Netlify Blobs store is uninitialized in production.');
         }
         const raw = await store.get('draft', { type: 'json' });
-        return raw || null;
+        if (raw) {
+          const sanitized = sanitizeSiteContent(raw);
+          if (raw.contact?.emailValue === LEGACY_EMAIL || raw.profileInfo?.email === LEGACY_EMAIL) {
+            store.setJSON('draft', sanitized).catch((err: any) => {
+              console.warn('Auto-migrated legacy email in Netlify Blobs draft store:', err?.message);
+            });
+          }
+          return sanitized;
+        }
+        return null;
       } catch (err: any) {
         throw new Error(
           `Persistent storage read failed: Unable to fetch draft from Netlify Blobs in production (${err.message}).`
@@ -173,7 +236,17 @@ export const portfolioStorage = {
       }
     }
 
-    return readLocalStore().draft;
+    const raw = readLocalStore().draft;
+    if (raw) {
+      const sanitized = sanitizeSiteContent(raw);
+      if (raw.contact?.emailValue === LEGACY_EMAIL || raw.profileInfo?.email === LEGACY_EMAIL) {
+        const local = readLocalStore();
+        local.draft = sanitized;
+        writeLocalStore(local);
+      }
+      return sanitized;
+    }
+    return null;
   },
 
   async setDraftContent(content: any): Promise<void> {
@@ -181,13 +254,15 @@ export const portfolioStorage = {
       throw new Error('Simulated persistent storage failure on write');
     }
 
+    const sanitized = sanitizeSiteContent(content);
+
     if (isProductionEnvironment()) {
       try {
         const store = await getNetlifyBlobStore();
         if (!store) {
           throw new Error('Netlify Blobs store is uninitialized in production.');
         }
-        await store.setJSON('draft', content);
+        await store.setJSON('draft', sanitized);
         return;
       } catch (err: any) {
         throw new Error(
@@ -197,7 +272,7 @@ export const portfolioStorage = {
     }
 
     const local = readLocalStore();
-    local.draft = content;
+    local.draft = sanitized;
     local.updatedAt = new Date().toISOString();
     writeLocalStore(local);
   },

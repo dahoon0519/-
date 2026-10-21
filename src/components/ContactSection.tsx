@@ -44,9 +44,16 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [lastSentEmail, setLastSentEmail] = useState('');
+  const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
+  const [emailSent, setEmailSent] = useState<boolean>(false);
 
-  // The active admin contact email dynamically recognized
-  const targetEmail = profileInfo?.email || siteContact.emailValue || 'dhgh159030@gmail.com';
+  // The active admin contact email: strictly dahoon0519@gmail.com, disallowing legacy override
+  const targetEmail =
+    siteContact.emailValue && siteContact.emailValue !== 'dhgh159030@gmail.com'
+      ? siteContact.emailValue
+      : profileInfo?.email && profileInfo.email !== 'dhgh159030@gmail.com'
+      ? profileInfo.email
+      : 'dahoon0519@gmail.com';
   const currentName = profileInfo?.name || siteContact.name;
   const currentLocation =
     profileInfo?.location || siteContact.locationValue[currentLang] || siteContact.locationValue['ja'];
@@ -132,12 +139,13 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
         email: trimmedEmail,
         phone: trimmedPhone,
         message: trimmedMessage,
-        targetEmail,
         _gotcha: honeypot,
       });
 
       if (res && res.success) {
         setLastSentEmail(targetEmail);
+        setNotificationStatus(res.notificationStatus || 'not_configured');
+        setEmailSent(Boolean((res as any).emailSent || res.notificationStatus === 'sent'));
         setSubmitSuccess(true);
         setSubmitError(null);
       } else {
@@ -165,6 +173,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
     setHoneypot('');
     setSubmitError(null);
     setSubmitSuccess(false);
+    setNotificationStatus(null);
+    setEmailSent(false);
   };
 
   return (
@@ -343,26 +353,46 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
 
               {submitSuccess ? (
                 <div className="bg-[#FAF8F5] border border-[#DDD5C7] rounded-xl p-6 text-center space-y-4 my-4 animate-in fade-in">
-                  <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto">
+                  <div
+                    className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto ${
+                      emailSent
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-amber-100 text-amber-700'
+                    }`}
+                  >
                     <Check className="w-6 h-6" />
                   </div>
                   <div>
                     <h4 className="text-lg font-serif-jp text-[#1F1E1D] font-medium">
-                      {currentLang === 'ja'
-                        ? 'お問い合わせを受け付けました'
+                      {emailSent
+                        ? currentLang === 'ja'
+                          ? 'お問い合わせを受け付けました'
+                          : currentLang === 'ko'
+                          ? '문의가 안전하게 접수되었습니다'
+                          : 'Inquiry Submitted Successfully'
+                        : currentLang === 'ja'
+                        ? 'お問い合わせを保存しました'
                         : currentLang === 'ko'
-                        ? '문의가 안전하게 접수되었습니다'
-                        : 'Inquiry Submitted Successfully'}
+                        ? '문의가 안전하게 저장되었습니다'
+                        : 'Inquiry Saved Successfully'}
                     </h4>
                     <p className="text-xs text-[#635B50] mt-1.5 max-w-md mx-auto leading-relaxed">
-                      {currentLang === 'ja'
-                        ? 'お問い合わせ内容が安全に保存され、管理者へ通知されました。内容を確認のうえ、折り返しご連絡いたします。'
+                      {emailSent
+                        ? currentLang === 'ja'
+                          ? `お問い合わせ内容が安全に保存され、管理者（${lastSentEmail || targetEmail}）へメール通知が送信されました。内容を確認のうえ、折り返しご連絡いたします。`
+                          : currentLang === 'ko'
+                          ? `문의 내용이 안전하게 저장되고 관리자(${lastSentEmail || targetEmail})에게 이메일 알림이 정상 발송되었습니다. 확인 후 신속히 회신드리겠습니다.`
+                          : `Your inquiry has been safely saved and an email notification was sent to the administrator (${lastSentEmail || targetEmail}). We will get back to you shortly.`
+                        : currentLang === 'ja'
+                        ? `お問い合わせ内容はシステム内に安全に保存されました。現在メール即時通知は保留中（または未設定）ですが、管理画面にてメッセージを確実に確認できます。お急ぎの場合は ${lastSentEmail || targetEmail} まで直接ご連絡ください。`
                         : currentLang === 'ko'
-                        ? '문의 내용이 안전하게 저장되고 관리자에게 실시간 알림이 전달되었습니다. 확인 후 신속히 회신드리겠습니다.'
-                        : 'Your inquiry has been safely saved and notified to the administrator. We will get back to you shortly.'}
+                        ? `문의 내용이 안전하게 영구 저장되었습니다. 현재 실시간 이메일 전송은 대기(미설정) 상태이나, 관리자가 관리자 화면에서 문의를 확인할 수 있습니다. 급한 용무는 ${lastSentEmail || targetEmail} 로 직접 문의해 주세요.`
+                        : `Your inquiry has been safely saved. Email notification is currently pending or not configured, but the administrator can review your message in the dashboard. For urgent matters, please contact ${lastSentEmail || targetEmail} directly.`}
                     </p>
-                    <p className="text-[11px] text-[#8C8477] font-mono mt-1">
-                      {currentLang === 'ja' ? '通知先: ' : currentLang === 'ko' ? '알림 수신처: ' : 'Notification sent to: '}{lastSentEmail}
+                    <p className={`text-[11px] font-mono mt-1 ${emailSent ? 'text-[#8C8477]' : 'text-[#8C6D4F]'}`}>
+                      {emailSent
+                        ? (currentLang === 'ja' ? '通知先: ' : currentLang === 'ko' ? '알림 수신처: ' : 'Notification sent to: ') + (lastSentEmail || targetEmail)
+                        : (currentLang === 'ja' ? '直接連絡先: ' : currentLang === 'ko' ? '직접 연락처: ' : 'Direct contact: ') + (lastSentEmail || targetEmail)}
                     </p>
                   </div>
                   <div className="pt-2 flex flex-col sm:flex-row gap-2 justify-center">

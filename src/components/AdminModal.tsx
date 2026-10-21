@@ -41,6 +41,7 @@ import {
 import { CategoriesManager } from './CategoriesManager';
 import { SiteContentManager } from './SiteContentManager';
 import { InquiriesManager } from './InquiriesManager';
+import { ContactEmailSettingsManager } from './ContactEmailSettingsManager';
 import {
   authService,
   ALLOWED_ADMIN_EMAIL,
@@ -224,6 +225,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     | 'categories'
     | 'content'
     | 'inquiries'
+    | 'contactSettings'
     | 'coffee'
     | 'food'
     | 'latte'
@@ -904,6 +906,18 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               </button>
 
               <button
+                onClick={() => setActiveTab('contactSettings')}
+                className={`py-2.5 px-3 font-medium whitespace-nowrap cursor-pointer border-b-2 -mb-[1px] transition-colors flex items-center gap-1.5 ${
+                  activeTab === 'contactSettings'
+                    ? 'border-[#614936] text-[#1F1E1D] bg-[#FAF8F5]'
+                    : 'border-transparent text-[#736C62] hover:text-[#1F1E1D]'
+                }`}
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>{t('お問い合わせ・メール設定', '문의 및 이메일 설정', 'Contact & Email Settings')}</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab('home')}
                 className={`py-2.5 px-3 font-medium whitespace-nowrap cursor-pointer border-b-2 -mb-[1px] transition-colors ${
                   activeTab === 'home'
@@ -1019,6 +1033,21 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               {activeTab === 'inquiries' && (
                 <InquiriesManager
                   currentLang={currentLang}
+                  showNotify={showNotify}
+                />
+              )}
+
+              {/* TAB: CONTACT & EMAIL SETTINGS */}
+              {activeTab === 'contactSettings' && (
+                <ContactEmailSettingsManager
+                  currentLang={currentLang}
+                  siteContent={siteContent}
+                  draftContent={draftContent}
+                  profileInfo={profileInfo}
+                  onUpdateSiteContent={onUpdateSiteContent}
+                  onUpdateProfileInfo={onUpdateProfileInfo}
+                  onSaveDraft={onSaveDraft}
+                  onPublish={onPublish}
                   showNotify={showNotify}
                 />
               )}
@@ -2280,6 +2309,16 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         }
                         className="w-full px-2.5 py-1.5 border border-[#DDD6CB] rounded text-[#222] bg-[#FAF8F5]"
                       />
+                      <div className="mt-1.5 flex items-center justify-between text-[10px] text-[#8C8477]">
+                        <span>{t('※ お問い合わせ通知先と連動しています', '※ 문의 알림 수신처와 실시간 연동됩니다', '※ Synchronized with inquiry notification recipient')}</span>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('contactSettings')}
+                          className="text-[#634832] hover:underline font-medium cursor-pointer"
+                        >
+                          {t('お問い合わせ・メール設定を開く →', '문의 및 이메일 설정 열기 →', 'Open Contact & Email Settings →')}
+                        </button>
+                      </div>
                     </div>
 
                     <div>

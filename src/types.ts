@@ -274,6 +274,7 @@ export interface SiteContent {
     skillsText: Record<Language, string>;
     emailLabel: Record<Language, string>;
     emailValue: string;
+    notificationEmail?: string;
     copyEmail: Record<Language, string>;
     copied: Record<Language, string>;
     locationLabel: Record<Language, string>;

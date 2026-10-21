@@ -767,7 +767,8 @@ export const defaultSiteContent: SiteContent = {
       ko: '수신 이메일 주소',
       en: 'Contact Email',
     },
-    emailValue: 'dhgh159030@gmail.com',
+    emailValue: 'dahoon0519@gmail.com',
+    notificationEmail: 'dahoon0519@gmail.com',
     copyEmail: {
       ja: 'メールアドレスをコピー',
       ko: '이메일 주소 복사',

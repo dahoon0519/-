@@ -17,11 +17,13 @@ export function createExpressApp() {
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (!req.cookies?.['XSRF-TOKEN']) {
       const isProd = isProductionEnvironment();
+      const isPreviewHttps = Boolean(process.env.APP_URL?.startsWith('https://'));
+      const isSecure = isProd || isPreviewHttps;
       const token = crypto.randomBytes(24).toString('hex');
       res.cookie('XSRF-TOKEN', token, {
         httpOnly: false,
-        secure: isProd,
-        sameSite: 'lax',
+        secure: isSecure,
+        sameSite: (isPreviewHttps && !isProd ? 'none' : 'lax') as 'none' | 'lax',
         maxAge: 12 * 60 * 60 * 1000,
         path: '/',
       });

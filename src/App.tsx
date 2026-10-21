@@ -66,7 +66,7 @@ function setDeepValue(obj: any, path: string, value: any) {
 
 const defaultProfileInfo: ProfileInfo = {
   name: 'HAN DAHOON',
-  email: 'dhgh159030@gmail.com',
+  email: 'dahoon0519@gmail.com',
   instagram: '@dahoon_coffee_food (準備中)',
   location: '日本国内（東京 / 近郊 / 関西等、柔軟に対応可能です）',
 };
@@ -97,7 +97,7 @@ export default function App() {
     text: string;
   } | null>(null);
 
-  // Admin authentication state (Google Sign-In, single-admin: dhgh159030@gmail.com)
+  // Admin authentication state (Google Sign-In, single-admin: dahoon0519@gmail.com)
   const [adminUser, setAdminUser] = useState<AdminUser | null>(() => authService.getCurrentAdmin());
   const [isAdmin, setIsAdmin] = useState<boolean>(() => authService.isAuthorizedAdmin());
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
@@ -106,8 +106,18 @@ export default function App() {
   useEffect(() => {
     loadPublishedContent().then((loaded) => {
       if (loaded) {
+        if (loaded.contact && loaded.contact.emailValue === 'dhgh159030@gmail.com') {
+          loaded.contact.emailValue = 'dahoon0519@gmail.com';
+        }
         setPublishedContent(loaded);
         setSavedSiteContentSnapshot(loaded);
+        if (loaded.contact?.emailValue) {
+          setProfileInfo((prev) => ({
+            ...prev,
+            email: loaded.contact.emailValue === 'dhgh159030@gmail.com' ? 'dahoon0519@gmail.com' : (loaded.contact.emailValue || 'dahoon0519@gmail.com'),
+            name: loaded.contact.name || prev.name,
+          }));
+        }
       }
     });
 
@@ -421,7 +431,14 @@ export default function App() {
   const [profileInfo, setProfileInfo] = useState<ProfileInfo>(() => {
     try {
       const saved = localStorage.getItem('dahoon_profile_info');
-      return saved ? JSON.parse(saved) : defaultProfileInfo;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.email === 'dhgh159030@gmail.com' || !parsed.email) {
+          parsed.email = 'dahoon0519@gmail.com';
+        }
+        return parsed;
+      }
+      return defaultProfileInfo;
     } catch {
       return defaultProfileInfo;
     }
@@ -1220,13 +1237,17 @@ export default function App() {
         onResetFoodOverview={handleResetFoodOverview}
         profileInfo={profileInfo}
         onUpdateProfileInfo={(newInfo) => {
-          setProfileInfo(newInfo);
+          const sanitizedInfo = {
+            ...newInfo,
+            email: newInfo.email === 'dhgh159030@gmail.com' ? 'dahoon0519@gmail.com' : newInfo.email,
+          };
+          setProfileInfo(sanitizedInfo);
           handlePublish({
             ...activeContent,
             contact: {
               ...activeContent.contact,
-              emailValue: newInfo.email,
-              name: newInfo.name,
+              emailValue: sanitizedInfo.email,
+              name: sanitizedInfo.name,
             },
           });
         }}

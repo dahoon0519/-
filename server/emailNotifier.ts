@@ -7,6 +7,7 @@ export interface InquiryNotificationData {
   phone?: string;
   message: string;
   createdAt: string;
+  recipientEmail?: string;
 }
 
 export interface NotificationResult {
@@ -66,7 +67,11 @@ export async function sendInquiryNotification(
   inquiry: InquiryNotificationData
 ): Promise<NotificationResult> {
   const apiKey = (process.env.RESEND_API_KEY || '').trim();
-  const notifyEmail = (process.env.NOTIFY_EMAIL || 'dahoon0519@gmail.com').trim();
+  const notifyEmail = (
+    inquiry.recipientEmail?.trim() ||
+    process.env.NOTIFY_EMAIL ||
+    'dahoon0519@gmail.com'
+  ).trim();
   const fromEmail = (
     process.env.EMAIL_FROM ||
     'HAN DAHOON Portfolio <onboarding@resend.dev>'

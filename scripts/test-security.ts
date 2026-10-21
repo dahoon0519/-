@@ -13,6 +13,7 @@ import {
 import {
   portfolioStorage,
   setSimulateStorageFailureForTest,
+  sanitizeSiteContent,
 } from '../server/storage';
 import {
   setSimulateResendFailureForTest,
@@ -633,6 +634,66 @@ async function runSecurityTests() {
     assert(
       !jsonStringified.includes('re_') && !jsonStringified.includes('SESSION_SECRET'),
       'Inquiry API responses never leak Resend API keys or session secrets'
+    );
+
+    // 7m. Visitor-supplied targetEmail is strictly ignored; notifications are directed only to dahoon0519@gmail.com
+    const spoofRes = await fetch(`${BASE_URL}/api/inquiries`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfTokenValue,
+        'X-Test-Bypass-Rate-Limit': 'true',
+        Cookie: csrfCookie,
+      },
+      body: JSON.stringify({
+        name: 'Spoof Test Visitor',
+        email: 'spoof@example.com',
+        message: 'Attempting to spoof recipient with malicious targetEmail',
+        targetEmail: 'malicious-attacker@evil.com',
+      }),
+    });
+    const spoofData = await spoofRes.json();
+    assert(
+      spoofRes.status === 200 && spoofData.success === true,
+      'Submission with spoofed targetEmail is accepted'
+    );
+    const storedSpoof = (await portfolioStorage.getContactInquiries()).find(
+      (inq: any) => inq.id === spoofData.inquiryId
+    );
+    assert(
+      storedSpoof && storedSpoof.targetEmail === AUTHORIZED_ADMIN_EMAIL,
+      `Visitor-supplied targetEmail is strictly ignored; stored targetEmail is ${AUTHORIZED_ADMIN_EMAIL}`
+    );
+    if (spoofData.inquiryId) {
+      await portfolioStorage.deleteContactInquiry(spoofData.inquiryId);
+    }
+
+    // 7n. Stored SiteContent with legacy email dhgh159030@gmail.com is safely migrated to dahoon0519@gmail.com
+    const mockLegacyContent = {
+      version: '1.0.0',
+      contact: {
+        name: 'HAN DAHOON',
+        emailValue: 'dhgh159030@gmail.com',
+        locationValue: { ja: '東京', ko: '도쿄', en: 'Tokyo' },
+      },
+      profileInfo: {
+        name: 'HAN DAHOON',
+        email: 'dhgh159030@gmail.com',
+        location: '東京',
+      },
+    };
+    const migrated = sanitizeSiteContent(mockLegacyContent);
+    assert(
+      migrated.contact.emailValue === 'dahoon0519@gmail.com' &&
+      migrated.profileInfo.email === 'dahoon0519@gmail.com' &&
+      migrated.contact.locationValue.ja === '東京',
+      'Legacy contact email dhgh159030@gmail.com is safely migrated to dahoon0519@gmail.com on read without resetting other content'
+    );
+
+    // 7o. Inquiry response accurately reports emailSent: false when notification is not delivered
+    assert(
+      failureData.emailSent === false,
+      'Inquiry response accurately reports emailSent: false when notification fails'
     );
   } catch (err: any) {
     assert(false, 'Section 7 execution error', err.message);
