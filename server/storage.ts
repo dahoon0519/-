@@ -42,27 +42,25 @@ export function isNetlifyBlobsAvailable(): boolean {
   );
 }
 
-let blobStorePromise: Promise<any> | null = null;
-
+/**
+ * Open a store using the current invocation context.
+ * Do not retain a cached/rejected promise across Lambda invocations.
+ * Keep the site-wide store name unchanged to preserve existing content.
+ */
 async function getNetlifyBlobStore() {
   if (simulateStorageFailureForTest) {
     throw new Error('Simulated Netlify Blobs storage failure for test verification');
   }
 
-  if (!blobStorePromise) {
-    blobStorePromise = (async () => {
-      try {
-        const { getStore } = await import('@netlify/blobs');
-        return getStore('portfolio-content');
-      } catch (err: any) {
-        if (isProductionEnvironment()) {
-          throw new Error(`Failed to load Netlify Blobs module in production: ${err?.message}`);
-        }
-        return null;
-      }
-    })();
+  try {
+    const { getStore } = await import('@netlify/blobs');
+    return getStore('portfolio-content');
+  } catch (err: any) {
+    if (isProductionEnvironment()) {
+      throw new Error(`Failed to initialize Netlify Blobs in production: ${err?.message}`);
+    }
+    return null;
   }
-  return blobStorePromise;
 }
 
 /**
