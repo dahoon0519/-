@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Language, SiteContent, ProfileInfo } from '../types';
+import { Language, SiteContent } from '../types';
 import {
   Mail,
   Save,
@@ -16,22 +16,18 @@ import {
 interface ContactEmailSettingsManagerProps {
   currentLang: Language;
   siteContent: SiteContent;
+  publishedSiteContent: SiteContent;
   draftContent?: SiteContent | null;
-  profileInfo: ProfileInfo;
-  onUpdateSiteContent: (content: SiteContent) => void;
-  onUpdateProfileInfo: (info: ProfileInfo) => void;
-  onSaveDraft?: (newContent: SiteContent) => Promise<void>;
-  onPublish?: (newContent: SiteContent, summary?: string) => Promise<void>;
+  onSaveDraft?: (newContent: SiteContent) => Promise<boolean>;
+  onPublish?: (newContent: SiteContent, summary?: string) => Promise<boolean>;
   showNotify?: (msg: string) => void;
 }
 
 export const ContactEmailSettingsManager: React.FC<ContactEmailSettingsManagerProps> = ({
   currentLang,
   siteContent,
+  publishedSiteContent,
   draftContent,
-  profileInfo,
-  onUpdateSiteContent,
-  onUpdateProfileInfo,
   onSaveDraft,
   onPublish,
   showNotify,
@@ -41,8 +37,8 @@ export const ContactEmailSettingsManager: React.FC<ContactEmailSettingsManagerPr
 
   // Active published vs draft recipient email
   const publishedEmail =
-    siteContent.contact?.notificationEmail ||
-    siteContent.contact?.emailValue ||
+    publishedSiteContent.contact?.notificationEmail ||
+    publishedSiteContent.contact?.emailValue ||
     'dahoon0519@gmail.com';
 
   const initialDraftEmail =
@@ -137,9 +133,9 @@ export const ContactEmailSettingsManager: React.FC<ContactEmailSettingsManagerPr
 
     try {
       const updated = createUpdatedContent(trimmed);
-      onUpdateSiteContent(updated);
-      onUpdateProfileInfo({ ...profileInfo, email: trimmed });
-      await onSaveDraft(updated);
+      // Drafts must never invoke a callback that publishes live content.
+      const saved = await onSaveDraft(updated);
+      if (!saved) throw new Error('Draft saving failed; the live email recipient was not changed.');
 
       const successText = t(
         '通知先メールアドレスを下書きとして保存しました。本番反映するには「本番公開 (Publish)」を実行してください。',
@@ -168,11 +164,9 @@ export const ContactEmailSettingsManager: React.FC<ContactEmailSettingsManagerPr
 
     try {
       const updated = createUpdatedContent(trimmed);
-      onUpdateSiteContent(updated);
-      onUpdateProfileInfo({ ...profileInfo, email: trimmed });
-
       const summary = `문의 수신 및 공개 연락처 이메일 변경 (${trimmed})`;
-      await onPublish(updated, summary);
+      const published = await onPublish(updated, summary);
+      if (!published) throw new Error('Publishing failed; please check the reported error.');
 
       const successText = t(
         `通知先および公開メールアドレスが ${trimmed} に正常に公開・反映されました！`,
