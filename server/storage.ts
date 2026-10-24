@@ -133,6 +133,55 @@ export function sanitizeSiteContent<T = any>(content: T): T {
   return cloned;
 }
 
+/**
+ * V2 inquiry layout. The legacy 'inquiries' array is intentionally retained
+ * unchanged; each new inquiry is stored under its own immutable-ish key.
+ * A tombstone hides deleted legacy records without mutating the legacy array.
+ */
+const INQUIRY_RECORD_PREFIX = 'inquiry-records/';
+const INQUIRY_DELETED_PREFIX = 'inquiry-deleted/';
+
+function inquiryRecordKey(id: string): string {
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(id)) {
+    throw new Error('Invalid inquiry ID');
+  }
+  return `${INQUIRY_RECORD_PREFIX}${id}`;
+}
+
+function inquiryDeletedKey(id: string): string {
+  inquiryRecordKey(id); // Validate once for all inquiry keys.
+  return `${INQUIRY_DELETED_PREFIX}${id}`;
+}
+
+async function readMergedNetlifyInquiries(store: NonNullable<Awaited<ReturnType<typeof getNetlifyBlobStore>>>): Promise<any[]> {
+  // Do not rewrite, migrate, or delete the legacy array. Preserve all
+  // earlier inquiries even if an updated deploy is rolled back.
+  const [legacy, records, tombstones] = await Promise.all([
+    store.get('inquiries', { type: 'json' }),
+    store.list({ prefix: INQUIRY_RECORD_PREFIX }),
+    store.list({ prefix: INQUIRY_DELETED_PREFIX }),
+  ]);
+  const removed = new Set(tombstones.blobs.map(item => item.key.slice(INQUIRY_DELETED_PREFIX.length)));
+  const merged = new Map<string, any>();
+  for (const inquiry of Array.isArray(legacy) ? legacy : []) {
+    if (inquiry && typeof inquiry.id === 'string' && !removed.has(inquiry.id)) {
+      merged.set(inquiry.id, inquiry);
+    }
+  }
+  const newer = await Promise.all(records.blobs.map(async entry => {
+    return store.get(entry.key, { type: 'json' });
+  }));
+  // A per-inquiry record overrides the legacy snapshot for the same ID.
+  for (const inquiry of newer) {
+    if (inquiry && typeof inquiry.id === 'string' && !removed.has(inquiry.id)) {
+      merged.set(inquiry.id, inquiry);
+    }
+  }
+  return Array.from(merged.values()).sort((a, b) =>
+    String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+  );
+}
+
 export const portfolioStorage = {
   async getPublishedContent(): Promise<any | null> {
     if (simulateStorageFailureForTest) {
@@ -357,20 +406,10 @@ export const portfolioStorage = {
     }
 
     if (isProductionEnvironment()) {
-      try {
-        const store = await getNetlifyBlobStore();
-        if (!store) {
-          throw new Error('Netlify Blobs store is uninitialized in production.');
-        }
-        const raw = await store.get('inquiries', { type: 'json' });
-        return Array.isArray(raw) ? raw : [];
-      } catch (err: any) {
-        throw new Error(
-          `Persistent storage read failed: Unable to fetch inquiries from Netlify Blobs (${err.message}).`
-        );
-      }
+      const store = await getNetlifyBlobStore();
+      if (!store) throw new Error('Netlify Blobs store is uninitialized in production.');
+      return readMergedNetlifyInquiries(store);
     }
-
     return readLocalStore().inquiries || [];
   },
 
@@ -381,13 +420,10 @@ export const portfolioStorage = {
 
     if (isProductionEnvironment()) {
       const store = await getNetlifyBlobStore();
-      if (!store) {
-        throw new Error('Netlify Blobs store is uninitialized in production.');
-      }
-      const raw = await store.get('inquiries', { type: 'json' });
-      const list = Array.isArray(raw) ? raw : [];
-      const updated = [inquiry, ...list];
-      await store.setJSON('inquiries', updated);
+      if (!store) throw new Error('Netlify Blobs store is uninitialized in production.');
+      const key = inquiryRecordKey(inquiry.id);
+      const result = await store.setJSON(key, inquiry, { onlyIfNew: true });
+      if (!result.modified) throw new Error('Inquiry ID already exists');
       return inquiry;
     }
 
@@ -407,13 +443,11 @@ export const portfolioStorage = {
 
     if (isProductionEnvironment()) {
       const store = await getNetlifyBlobStore();
-      if (!store) {
-        throw new Error('Netlify Blobs store is uninitialized in production.');
-      }
-      const raw = await store.get('inquiries', { type: 'json' });
-      const list = Array.isArray(raw) ? raw : [];
-      const updated = list.filter((item: any) => item.id !== id);
-      await store.setJSON('inquiries', updated);
+      if (!store) throw new Error('Netlify Blobs store is uninitialized in production.');
+      // Keep tombstones so old inquiries in the preserved legacy array
+      // cannot be resurrected by deleting the V2 record.
+      await store.setJSON(inquiryDeletedKey(id), { deletedAt: new Date().toISOString() });
+      await store.delete(inquiryRecordKey(id));
       return true;
     }
 
@@ -432,21 +466,27 @@ export const portfolioStorage = {
 
     if (isProductionEnvironment()) {
       const store = await getNetlifyBlobStore();
-      if (!store) {
-        throw new Error('Netlify Blobs store is uninitialized in production.');
+      if (!store) throw new Error('Netlify Blobs store is uninitialized in production.');
+      const key = inquiryRecordKey(id);
+      if (await store.get(inquiryDeletedKey(id))) return null;
+      let current = await store.get(key, { type: 'json' });
+      if (!current) {
+        const legacy = await store.get('inquiries', { type: 'json' });
+        current = Array.isArray(legacy) ? legacy.find((item: any) => item?.id === id) : null;
       }
-      const raw = await store.get('inquiries', { type: 'json' });
-      const list = Array.isArray(raw) ? raw : [];
-      let found: any = null;
-      const updated = list.map((item: any) => {
-        if (item.id === id) {
-          found = { ...item, ...updates };
-          return found;
-        }
-        return item;
-      });
-      await store.setJSON('inquiries', updated);
-      return found;
+      if (!current) return null;
+      // ETag-conditional update protects simultaneous changes to the same
+      // record from being silently lost. Retry a bounded number of times.
+      for (let attempt = 0; attempt < 4; attempt++) {
+        if (await store.get(inquiryDeletedKey(id))) return null;
+        const existing = await store.getWithMetadata(key, { type: 'json', consistency: 'strong' });
+        const base = existing?.data || current;
+        const next = { ...base, ...updates, id };
+        const outcome = await store.setJSON(key, next,
+          existing ? { onlyIfMatch: existing.etag } : { onlyIfNew: true });
+        if (outcome.modified) return next;
+      }
+      throw new Error('Inquiry update conflicted with another write');
     }
 
     const local = readLocalStore();
@@ -471,10 +511,14 @@ export const portfolioStorage = {
 
     if (isProductionEnvironment()) {
       const store = await getNetlifyBlobStore();
-      if (!store) {
-        throw new Error('Netlify Blobs store is uninitialized in production.');
-      }
-      await store.setJSON('inquiries', []);
+      if (!store) throw new Error('Netlify Blobs store is uninitialized in production.');
+      // Delete the currently visible inquiries one by one. Do not rewrite
+      // or clear the legacy array, because it is a preservation snapshot.
+      const existing = await readMergedNetlifyInquiries(store);
+      await Promise.all(existing.map(async inquiry => {
+        await store.setJSON(inquiryDeletedKey(inquiry.id), { deletedAt: new Date().toISOString() });
+        await store.delete(inquiryRecordKey(inquiry.id));
+      }));
       return;
     }
 
