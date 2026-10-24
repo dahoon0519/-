@@ -198,6 +198,7 @@ export default function App() {
             : 'Draft saved safely (not yet published to live site).',
       });
       setTimeout(() => setEditStatusMessage(null), 4000);
+      return true;
     } catch (err: any) {
       setEditStatusMessage({
         type: 'error',
@@ -208,6 +209,7 @@ export default function App() {
             ? `임시저장 실패: ${err.message || 'Error'}`
             : `Failed to save draft: ${err.message || 'Error'}`,
       });
+      return false;
     } finally {
       setIsSaving(false);
     }
@@ -219,6 +221,9 @@ export default function App() {
     try {
       const published = await publishContent(target, summary);
       setPublishedContent(published);
+      if (published.contact?.emailValue) {
+        setProfileInfo((prev) => ({ ...prev, email: published.contact.emailValue }));
+      }
       setDraftContent(null);
       setSavedSiteContentSnapshot(JSON.parse(JSON.stringify(published)));
       setHasUnsavedChanges(false);
@@ -233,6 +238,7 @@ export default function App() {
             : 'Portfolio successfully published live to all visitors!',
       });
       setTimeout(() => setEditStatusMessage(null), 4500);
+      return true;
     } catch (err: any) {
       setEditStatusMessage({
         type: 'error',
@@ -243,6 +249,7 @@ export default function App() {
             ? `게시 실패: ${err.message || 'Error'}`
             : `Publish failed: ${err.message || 'Error'}`,
       });
+      return false;
     } finally {
       setIsSaving(false);
     }
@@ -1253,6 +1260,7 @@ export default function App() {
         }}
         onResetAllData={handleResetAllData}
         siteContent={activeContent}
+        publishedSiteContent={publishedContent}
         draftContent={draftContent}
         onSaveDraft={handleSaveDraft}
         onPublish={handlePublish}

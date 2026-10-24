@@ -85,9 +85,10 @@ interface AdminModalProps {
   onUpdateProfileInfo: (info: ProfileInfo) => void;
   onResetAllData: () => void;
   siteContent: SiteContent;
+  publishedSiteContent: SiteContent;
   draftContent?: SiteContent | null;
-  onSaveDraft?: (newContent: SiteContent) => Promise<void>;
-  onPublish?: (newContent: SiteContent, summary?: string) => Promise<void>;
+  onSaveDraft?: (newContent: SiteContent) => Promise<boolean>;
+  onPublish?: (newContent: SiteContent, summary?: string) => Promise<boolean>;
   onDiscardDraft?: () => Promise<void>;
   onRestoreVersion?: (versionId: string) => Promise<void>;
   onPreviewToggle?: () => void;
@@ -137,6 +138,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onUpdateProfileInfo,
   onResetAllData,
   siteContent,
+  publishedSiteContent,
   draftContent,
   onSaveDraft,
   onPublish,
@@ -1016,8 +1018,12 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   currentLang={currentLang}
                   siteContent={siteContent}
                   draftContent={draftContent}
-                  onSaveDraft={onSaveDraft}
-                  onPublish={onPublish}
+                  onSaveDraft={onSaveDraft ? async (content) => {
+                    if (!(await onSaveDraft(content))) throw new Error('Draft save failed');
+                  } : undefined}
+                  onPublish={onPublish ? async (content, summary) => {
+                    if (!(await onPublish(content, summary))) throw new Error('Publish failed');
+                  } : undefined}
                   onDiscardDraft={onDiscardDraft}
                   onRestoreVersion={onRestoreVersion}
                   onPreviewToggle={onPreviewToggle}
@@ -1042,10 +1048,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 <ContactEmailSettingsManager
                   currentLang={currentLang}
                   siteContent={siteContent}
+                  publishedSiteContent={publishedSiteContent}
                   draftContent={draftContent}
-                  profileInfo={profileInfo}
-                  onUpdateSiteContent={onUpdateSiteContent}
-                  onUpdateProfileInfo={onUpdateProfileInfo}
                   onSaveDraft={onSaveDraft}
                   onPublish={onPublish}
                   showNotify={showNotify}
