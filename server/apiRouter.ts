@@ -9,6 +9,7 @@ import {
   isProductionEnvironment,
 } from './auth';
 import { portfolioStorage } from './storage';
+import { MAX_MEDIA_BYTES, savePortfolioMedia, getPortfolioMedia } from './mediaStorage';
 
 export const apiRouter = Router();
 
@@ -122,6 +123,45 @@ function getOptionalSession(req: Request): SessionPayload | null {
 
 // Apply CSRF verification to all mutating routes
 apiRouter.use(verifyCsrfProtection);
+
+
+// Media files are stored separately from published/draft JSON.
+// All new writes require the existing verified administrator session + CSRF.
+apiRouter.post('/media', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const bytes = req.body;
+  if (!Buffer.isBuffer(bytes)) {
+    return res.status(415).json({ error: 'Upload a JPEG, PNG, WebP, GIF, MP4, or WebM file with its correct Content-Type.' });
+  }
+  if (!bytes.length || bytes.length > MAX_MEDIA_BYTES) {
+    return res.status(413).json({ error: 'Media exceeds the 3 MB upload limit. Compress the image or use a smaller video.' });
+  }
+  try {
+    const url = await savePortfolioMedia(bytes, String(req.headers['content-type'] || ''));
+    return res.status(201).json({ success: true, url });
+  } catch (error: any) {
+    if (/Unsupported media format|File contents do not match|Media file size/.test(error?.message || '')) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error('Media upload failed:', error);
+    return res.status(503).json({ error: 'Could not save uploaded media. No content has been changed.' });
+  }
+});
+
+// Public read-only access for media referenced from published content.
+// Random opaque keys are immutable; uploads may also exist in an unpublished draft.
+apiRouter.get('/media/:id', async (req: Request, res: Response) => {
+  try {
+    const item = await getPortfolioMedia(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Media not found' });
+    res.setHeader('Content-Type', item.mime);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    return res.status(200).send(item.bytes);
+  } catch (error) {
+    console.error('Media read failed:', error);
+    return res.status(503).json({ error: 'Media temporarily unavailable' });
+  }
+});
 
 // -------------------------------------------------------------
 // Authentication Endpoints

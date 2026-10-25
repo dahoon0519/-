@@ -7,7 +7,13 @@ import { isProductionEnvironment } from './auth';
 export function createExpressApp() {
   const app = express();
 
-  // Parse JSON payloads up to 25MB (for base64 uploaded photos/videos in portfolio)
+  // Media uploads are binary: do not inflate them into JSON/base64 in SiteContent.
+  // Netlify's buffered Lambda upload limit is smaller than 6MB for binary data.
+  app.use('/api/media', express.raw({
+    type: ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm'],
+    limit: '3mb',
+  }));
+  // Keep legacy content support until existing inline-media snapshots are migrated.
   app.use(express.json({ limit: '25mb' }));
   app.use(express.urlencoded({ extended: true, limit: '25mb' }));
   app.use(cookieParser());

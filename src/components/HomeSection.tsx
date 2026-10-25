@@ -1,3 +1,4 @@
+import { uploadPortfolioMedia } from '../utils/mediaUpload';
 import React, { useRef } from 'react';
 import { Language, HeroPhotoInfo, LatteArtPhoto, isVideoMedia, SiteContent } from '../types';
 import { translations } from '../i18n/translations';
@@ -42,20 +43,16 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
     }
   };
 
-  const handleHeroFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleHeroFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const isVideo = file.type.startsWith('video/');
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          onChangeHeroPhoto(
-            event.target.result as string,
-            isVideo ? 'video' : 'image'
-          );
-        }
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+    try {
+      const media = await uploadPortfolioMedia(file, currentLang);
+      onChangeHeroPhoto(media.url, media.mediaType);
+    } catch (error: any) {
+      alert(error.message || 'Media upload failed');
+    } finally {
+      e.target.value = '';
     }
   };
 
