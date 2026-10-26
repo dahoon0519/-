@@ -125,6 +125,46 @@ function getOptionalSession(req: Request): SessionPayload | null {
 apiRouter.use(verifyCsrfProtection);
 
 
+/**
+ * Issue a short-lived Cloudinary signed direct-upload request.
+ * Only a verified administrator with a valid CSRF token can request this.
+ * Never expose CLOUDINARY_API_SECRET or permit client-defined signing options.
+ */
+apiRouter.post('/media/cloudinary/sign', requireAdminAuth, (req: AuthenticatedRequest, res: Response) => {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME?.trim();
+  const apiKey = process.env.CLOUDINARY_API_KEY?.trim();
+  const apiSecret = process.env.CLOUDINARY_API_SECRET?.trim();
+
+  if (!cloudName || !apiKey || !apiSecret) {
+    return res.status(503).json({
+      error: 'Cloudinary is not configured in this Netlify deploy context.',
+      code: 'CLOUDINARY_NOT_CONFIGURED',
+    });
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(cloudName)) {
+    return res.status(503).json({ error: 'Invalid Cloudinary cloud name configuration.' });
+  }
+
+  // Signed options are server-generated and cannot be chosen by visitors.
+  const timestamp = Math.floor(Date.now() / 1000);
+  const folder = 'dahoon-portfolio';
+  const publicId = crypto.randomUUID();
+  // Cloudinary SHA-1 signatures sort all signed parameters alphabetically,
+  // then append the API secret before hashing (not HMAC).
+  const signedParams = `folder=${folder}&public_id=${publicId}&timestamp=${timestamp}`;
+  const signature = crypto.createHash('sha1').update(signedParams + apiSecret).digest('hex');
+
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({
+    cloudName,
+    apiKey,
+    timestamp,
+    folder,
+    publicId,
+    signature,
+  });
+});
+
 // Media files are stored separately from published/draft JSON.
 // All new writes require the existing verified administrator session + CSRF.
 apiRouter.post('/media', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
