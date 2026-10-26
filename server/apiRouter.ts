@@ -208,12 +208,24 @@ apiRouter.post('/auth/google', async (req: Request, res: Response) => {
     });
   }
 
-  // Create signed session token
-  const token = createSignedSessionToken({
-    email: verification.email,
-    name: verification.name || 'HAN DAHOON',
-    picture: verification.picture,
-  });
+  // Create signed session token. Missing or invalid SESSION_SECRET must
+  // produce an actionable server error rather than an unhandled Lambda 502.
+  let token: string;
+  try {
+    token = createSignedSessionToken({
+      email: verification.email,
+      name: verification.name || 'HAN DAHOON',
+      picture: verification.picture,
+    });
+  } catch (err: unknown) {
+    // Never log session tokens, OAuth credentials, or the secret itself.
+    console.error('Admin session setup failed:', err instanceof Error ? err.message : 'Unknown session error');
+    return res.status(503).json({
+      error: 'Administrator session configuration unavailable.',
+      code: 'SESSION_CONFIGURATION_ERROR',
+      details: 'Verify SESSION_SECRET in the current Netlify deploy context and redeploy.',
+    });
+  }
 
   // Set secure HttpOnly cookie
   res.cookie(SESSION_COOKIE_NAME, token, getSessionCookieOptions());
