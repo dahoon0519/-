@@ -37,6 +37,22 @@ export function createExpressApp() {
     next();
   });
 
+  // Fail closed: a deploy preview without an isolated storage namespace must
+  // never save/publish/delete data in the production site-wide Blob store.
+  // Host checking only DENIES writes; it never grants privileged access.
+  app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+    const hostname = (req.headers.host || '').split(':')[0].toLowerCase();
+    const previewHost = /^deploy-preview-\\d+--dahoon-hospitality\\.netlify\\.app$/.test(hostname);
+    if (previewHost && !process.env.PORTFOLIO_STORAGE_NAMESPACE?.trim()
+        && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      return res.status(503).json({
+        error: 'Preview data isolation is not configured. Changes are disabled to protect production data.',
+        code: 'PREVIEW_STORAGE_NOT_CONFIGURED',
+      });
+    }
+    next();
+  });
+
   // Mount API router at /api
   app.use('/api', apiRouter);
 
