@@ -302,15 +302,26 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setIsHeroUploading(true);
     try {
       const media = await uploadPortfolioMedia(file, currentLang);
-      onUpdateHeroPhoto({
+      const updatedHero: HeroPhotoInfo = {
         ...heroPhoto,
         imageUrl: media.url,
         mediaType: media.mediaType,
-      });
+      };
+      onUpdateHeroPhoto(updatedHero);
+      // Persist the precise new value immediately as a draft; changing
+      // tabs or refreshing must not silently discard an uploaded video.
+      const saved = await onSaveDraft?.({ ...siteContent, heroPhoto: updatedHero });
+      if (saved === false) {
+        throw new Error(t(
+          '動画はアップロードされましたが下書き保存に失敗しました。',
+          '영상 업로드는 성공했지만 임시저장에 실패했어요.',
+          'Media uploaded but draft save failed.'
+        ));
+      }
       showNotify(t(
-        '代表メディアを変更しました。保存・公開すると他の端末にも反映されます。',
-        '대표 미디어를 변경했어요. 임시저장·게시 후 다른 기기에도 반영됩니다.',
-        'Hero media updated. Save and publish to show it on other devices.'
+        '代表メディアを下書き保存しました。公開するには「公開」を押してください。',
+        '대표 미디어가 임시저장됐어요. 공개하려면 게시 버튼을 누르세요.',
+        'Hero media saved as a draft. Press Publish to make it public.'
       ));
     } catch (error: any) {
       alert(error?.message || t(
@@ -1147,6 +1158,50 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                           />
                         </div>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Persistent hero controls: visible from the Home tab without switching pages. */}
+                  <div className="rounded-md border border-[#DDD6CA] bg-[#F7F3EC] px-4 py-3 space-y-3">
+                    <p className="text-xs text-[#62594E] leading-relaxed">
+                      {t(
+                        '写真・動画の変更は下書きとして保存されます。訪問者にも表示するには「公開」を押してください。',
+                        '대표 사진·영상 변경은 먼저 임시저장돼요. 방문자에게도 보이게 하려면 게시하세요.',
+                        'Hero changes are saved as a draft. Publish to show them to visitors.'
+                      )}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={isHeroUploading || !onSaveDraft}
+                        onClick={async () => {
+                          if (!onSaveDraft) return;
+                          const success = await onSaveDraft({ ...siteContent, heroPhoto });
+                          if (success) showNotify(t('下書きを保存しました', '임시저장 완료', 'Draft saved'));
+                        }}
+                        className="px-4 py-2 rounded border border-[#B9A994] bg-white hover:bg-[#F0E9DE] disabled:opacity-50 text-xs text-[#42392E]"
+                      >
+                        {t('下書きを保存', '임시저장', 'Save Draft')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isHeroUploading || !onPublish}
+                        onClick={async () => {
+                          if (!onPublish) return;
+                          const success = await onPublish(
+                            { ...siteContent, heroPhoto },
+                            'Updated home representative media'
+                          );
+                          if (success) showNotify(t(
+                            '代表メディアを公開しました',
+                            '대표 사진·영상 게시 완료',
+                            'Hero media published'
+                          ));
+                        }}
+                        className="px-4 py-2 rounded bg-[#4A3B2C] hover:bg-[#30251B] disabled:opacity-50 text-white text-xs"
+                      >
+                        {t('公開', '게시', 'Publish')}
+                      </button>
                     </div>
                   </div>
 

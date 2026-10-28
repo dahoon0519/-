@@ -333,6 +333,9 @@ apiRouter.post('/auth/logout', (req: Request, res: Response) => {
  * Public endpoint: reads the live published content.
  */
 apiRouter.get('/content/published', async (req: Request, res: Response) => {
+  // Published edits must be visible immediately after an admin publishes.
+  // Prevent stale HTTP/browser caches from showing the previous hero.
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
   try {
     const published = await portfolioStorage.getPublishedContent();
     return res.json({ published });

@@ -1092,13 +1092,18 @@ export default function App() {
           heroPhoto={activeContent.heroPhoto || heroPhoto}
           onOpenPhoto={setSelectedPhoto}
           isAdmin={isAdmin}
-          onChangeHeroPhoto={(url, mediaType) =>
-            handleUpdateHeroPhoto({
+          onChangeHeroPhoto={async (url, mediaType) => {
+            const nextHero: HeroPhotoInfo = {
               ...(activeContent.heroPhoto || heroPhoto),
               imageUrl: url,
               mediaType: mediaType || (isVideoMedia(url) ? 'video' : 'image'),
-            })
-          }
+            };
+            handleUpdateHeroPhoto(nextHero);
+            // Save the exact updated hero (not a stale React state snapshot).
+            // This is a draft: publishing remains an explicit admin action.
+            const saved = await handleSaveDraft({ ...activeContent, heroPhoto: nextHero });
+            if (!saved) throw new Error('Could not save new representative media as a draft.');
+          }}
           onOpenAdmin={() => setIsAdminModalOpen(true)}
           siteHero={activeContent.hero}
           isEditMode={isAdmin && isEditMode}
