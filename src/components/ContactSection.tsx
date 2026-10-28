@@ -10,7 +10,6 @@ import {
   Phone,
   User,
   MessageSquare,
-  Sparkles,
   ExternalLink,
   AlertCircle,
 } from 'lucide-react';
@@ -232,27 +231,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                 </div>
               </div>
 
-              {/* Dynamic Connected Email Recognition Notice */}
-              <div className="my-5 p-3 rounded-lg bg-[#F2EDE4]/80 border border-[#E0D7C8] text-xs text-[#635B4F] flex items-start gap-2.5">
-                <Sparkles className="w-4 h-4 text-[#8C6D4F] shrink-0 mt-0.5" />
-                <div className="leading-relaxed">
-                  <span className="font-semibold text-[#38322B] block mb-0.5">
-                    {currentLang === 'ja'
-                      ? '管理者連動メール'
-                      : currentLang === 'ko'
-                      ? '관리자 연동 수신 메일'
-                      : 'Connected Admin Email'}
-                  </span>
-                  <span>
-                    {currentLang === 'ja'
-                      ? '管理画面でメールアドレスを変更した場合も、自動認識され新しいアドレスへ届きます。'
-                      : currentLang === 'ko'
-                      ? '관리자에서 이메일을 변경하더라도 실시간 연동되어 변경된 주소로 문의를 받습니다.'
-                      : 'Automatically synced to the latest email updated in Admin.'}
-                  </span>
-                </div>
-              </div>
-
+              {/* Contact details; technical delivery information belongs in admin UI. */}
               {/* Contact Details */}
               <div className="space-y-4 text-sm">
                 {/* Email Box */}
@@ -307,6 +286,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                   </div>
                 </div>
 
+                {/* Hide unset social handles from visitors. */}
+                {currentInstagram?.trim() && !/^(?:—|-|準備中|coming soon)$/i.test(currentInstagram.trim()) && !/準備中|coming soon/i.test(currentInstagram) && (
                 {/* Instagram */}
                 <div className="flex items-center gap-3 p-3.5 bg-white border border-[#DDD6CA] rounded-lg">
                   <Instagram className="w-4 h-4 text-[#87664B] shrink-0" />
@@ -319,13 +300,16 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                     </span>
                   </div>
                 </div>
+                )}
               </div>
             </div>
 
-            {/* Note */}
-            <p className="text-xs text-[#70695E] leading-relaxed pt-6 mt-6 border-t border-[#EAE3D6] text-center italic">
-              {siteContact.note[currentLang] || siteContact.note['ja']}
-            </p>
+            {/* Optional short contact note */}
+            {(siteContact.note[currentLang] ?? siteContact.note['ja'])?.trim() && (
+              <p className="text-xs text-[#70695E] leading-relaxed pt-6 mt-6 border-t border-[#EAE3D6] text-center italic">
+                {siteContact.note[currentLang] ?? siteContact.note['ja']}
+              </p>
+            )}
           </div>
 
           {/* Right Column: Direct Contact Submission Form */}
@@ -535,13 +519,6 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                           : siteContact.sendButton[currentLang] || siteContact.sendButton['ja']}
                       </span>
                     </button>
-                    <p className="text-[11px] text-[#8C8477] text-center mt-2">
-                      {currentLang === 'ja'
-                        ? `※ 送信後、メッセージは安全に保存され、管理者（${targetEmail}）へメール通知されます。`
-                        : currentLang === 'ko'
-                        ? `※ 전송 시 문의가 안전하게 영구 저장되며, 관리자(${targetEmail})에게 실시간 이메일 알림이 전달됩니다.`
-                        : `* Inquiries are securely saved and automatically notified to the administrator (${targetEmail}).`}
-                    </p>
                   </div>
                 </form>
               )}
@@ -549,8 +526,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
           </div>
         </div>
 
-        {/* Section 13 Final Sincere Statement from Site Content */}
-        <div className="text-center text-xs sm:text-sm text-[#666056] leading-relaxed font-serif-jp space-y-2 border-t border-[#EDE8DF] pt-12">
+        {(siteContact.statements[currentLang] ?? siteContact.statements['ja'] ?? []).length > 0 && (
+          <div className="text-center text-xs sm:text-sm text-[#666056] leading-relaxed font-serif-jp space-y-2 border-t border-[#EDE8DF] pt-12">
           {(siteContact.statements[currentLang] || siteContact.statements['ja'] || []).map(
             (line, idx, arr) => (
               <p
@@ -562,6 +539,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
             )
           )}
         </div>
+        )}
       </div>
     </section>
   );
