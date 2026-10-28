@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { BUILD_DEPLOY_CONTEXT, BUILD_STORAGE_NAMESPACE } from './deployContext';
 
 // Define store item types
@@ -9,6 +10,29 @@ export interface StorageData {
   history: any[];
   inquiries: any[];
   updatedAt: string;
+  safetyBackups?: SafetyBackup[];
+}
+
+
+// Immutable, document-only recovery points. Media are kept by their existing
+// Cloudinary/legacy URLs; binary uploads and private inquiries are not copied.
+export interface SafetyBackup {
+  format: 'dahoon-portfolio-recovery';
+  version: 1;
+  id: string;
+  createdAt: string;
+  reason: string;
+  published: any | null;
+  draft: any | null;
+}
+const SAFETY_BACKUP_PREFIX = 'safety-backups/';
+function safeBackupId(id: string): string {
+  if (!/^[0-9]{13}-[a-f0-9-]{36}$/.test(id)) throw new Error('Invalid backup ID');
+  return id;
+}
+function safetyBackupMeta(item: SafetyBackup) {
+  return { id: item.id, createdAt: item.createdAt, reason: item.reason,
+    hasPublished: Boolean(item.published), hasDraft: Boolean(item.draft) };
 }
 
 const LOCAL_DATA_DIR = path.resolve(process.cwd(), '.data');
@@ -428,6 +452,58 @@ export const portfolioStorage = {
     local.history = history;
     local.updatedAt = new Date().toISOString();
     writeLocalStore(local);
+  },
+
+  // Preserve existing documents BEFORE any publish, live restore or backup
+  // import. Never silently overwrite or delete these recovery keys.
+  async createSafetyBackup(reason: string): Promise<ReturnType<typeof safetyBackupMeta>> {
+    const item: SafetyBackup = {
+      format: 'dahoon-portfolio-recovery',
+      version: 1,
+      id: `${Date.now()}-${crypto.randomUUID()}`,
+      createdAt: new Date().toISOString(),
+      reason: reason.slice(0, 120),
+      published: await this.getPublishedContent(),
+      draft: await this.getDraftContent(),
+    };
+    if (isProductionEnvironment()) {
+      const store = await getNetlifyBlobStore();
+      if (!store) throw new Error('Persistent storage unavailable');
+      const outcome = await store.setJSON(SAFETY_BACKUP_PREFIX + item.id, item, { onlyIfNew: true });
+      if (!outcome.modified) throw new Error('Safety backup conflict');
+    } else {
+      const data = readLocalStore();
+      data.safetyBackups = [item, ...(data.safetyBackups || [])];
+      writeLocalStore(data);
+    }
+    return safetyBackupMeta(item);
+  },
+
+  async getSafetyBackups(): Promise<ReturnType<typeof safetyBackupMeta>[]> {
+    if (isProductionEnvironment()) {
+      const store = await getNetlifyBlobStore();
+      if (!store) throw new Error('Persistent storage unavailable');
+      const entries = await store.list({ prefix: SAFETY_BACKUP_PREFIX });
+      const keys = entries.blobs.map(entry => entry.key)
+        .sort((a, b) => b.localeCompare(a)).slice(0, 30);
+      const items = await Promise.all(keys.map(key => store.get(key, { type: 'json' })));
+      return items.filter((x): x is SafetyBackup => Boolean(x && x.format === 'dahoon-portfolio-recovery'))
+        .map(safetyBackupMeta);
+    }
+    return (readLocalStore().safetyBackups || []).slice(0, 30).map(safetyBackupMeta);
+  },
+
+  async getSafetyBackup(id: string): Promise<SafetyBackup | null> {
+    safeBackupId(id);
+    let item: SafetyBackup | null;
+    if (isProductionEnvironment()) {
+      const store = await getNetlifyBlobStore();
+      if (!store) throw new Error('Persistent storage unavailable');
+      item = await store.get(SAFETY_BACKUP_PREFIX + id, { type: 'json' }) as SafetyBackup | null;
+    } else {
+      item = (readLocalStore().safetyBackups || []).find(item => item.id === id) || null;
+    }
+    return item?.format === 'dahoon-portfolio-recovery' ? item : null;
   },
 
   async getContactInquiries(): Promise<any[]> {
