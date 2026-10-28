@@ -2418,16 +2418,16 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     <div className="text-[11px] text-[#63594C] space-y-2 leading-relaxed">
                       <p>
                         {t(
-                          '本ポートフォリオは Vite ベースの React クライアント SPA として稼働しており、コンテンツや下書き・バージョン履歴はブラウザの localStorage / sessionStorage に保管されています。',
-                          '본 포트폴리오는 Vite 기반 React 클라이언트 SPA로 동작하며, 콘텐츠 및 임시저장·버전 이력은 브라우저의 localStorage / sessionStorage에 안전하게 보관됩니다.',
-                          'This portfolio runs as a client-side React SPA with Vite, storing content, drafts, and version snapshots in browser localStorage/sessionStorage.'
+                          '公開内容・下書き・履歴はサーバー側の Netlify Blobs に保存されます。ブラウザ保存は補助キャッシュで、バックアップとは異なります。',
+                          '게시 콘텐츠·임시저장·버전 기록은 서버의 Netlify Blobs에 저장됩니다. 브라우저 저장소는 보조 캐시이며 백업이 아닙니다.',
+                          'Published content, drafts and history live in server-side Netlify Blobs. Browser storage is a cache, not a backup.'
                         )}
                       </p>
                       <p>
                         {t(
-                          '管理者権限の検証は authService.isAuthorizedAdmin() を通じてクライアント側で厳格に照合されています。バックエンドDB（Firestore等）を接続する場合は、サーバーサイドのセキュリティルール（firestore.rules）に request.auth.token.email == adminEmail の照合を組み込むことで、完全なサーバーサイド検証が実現可能です。',
-                          '관리자 권한 검증은 authService.isAuthorizedAdmin()을 통해 브라우저 앱 런타임에서 단일 관리자 화이트리스트로 엄격히 대조됩니다. 향후 백엔드 DB(Firestore 등) 연동 시에는 firestore.rules를 통해 서버 차원의 완벽한 권한 강제가 가능합니다.',
-                          'Administrator authorization is strictly checked against the allowlisted admin email via authService.isAuthorizedAdmin(). For multi-user environments with a cloud database, configuring server-side security rules in firestore.rules ensures end-to-end enforcement.'
+                          '管理操作は Google ID トークンをサーバーで検証した管理者の HttpOnly セッションと CSRF 保護が必要です。バックアップの復元は下書きに限定されます。',
+                          '관리 작업은 서버가 확인한 Google 계정의 HttpOnly 관리자 세션과 CSRF 검사가 필요합니다. 백업 복원은 우선 임시저장으로만 적용됩니다.',
+                          'Admin changes require a server-verified Google login, HttpOnly session and CSRF token. Backup recovery restores only to Draft.'
                         )}
                       </p>
                     </div>
