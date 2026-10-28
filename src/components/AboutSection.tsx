@@ -27,7 +27,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
   const intro3_body = siteAbout?.intro3_body[currentLang] || t.about.intro3_body;
   const intro4_heading = siteAbout?.intro4_heading[currentLang] || t.about.intro4_heading;
   const intro4_body = siteAbout?.intro4_body[currentLang] || t.about.intro4_body;
-  const closing = siteAbout?.closing[currentLang] || t.about.closing;
+  const closing = siteAbout?.closing[currentLang] ?? t.about.closing;
 
   const stories = [
     {
@@ -111,19 +111,21 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
         </div>
 
         {/* Closing Thought */}
-        <div className="mt-16 sm:mt-20 pt-10 border-t border-[#EDE7DD] text-center">
-          <span className="font-serif-jp text-base sm:text-lg text-[#3B362F] italic tracking-wide leading-relaxed">
-            「
-            <EditableText
-              isEditMode={isEditMode}
-              value={closing}
-              onChange={(val) => onUpdateAboutField?.('closing', val)}
-              as="span"
-              className="inline"
-            />
-            」
-          </span>
-        </div>
+        {(closing?.trim() || isEditMode) && (
+          <div className="mt-16 sm:mt-20 pt-10 border-t border-[#EDE7DD] text-center">
+            <span className="font-serif-jp text-base sm:text-lg text-[#3B362F] italic tracking-wide leading-relaxed">
+              {closing?.trim() ? '「' : ''}
+              <EditableText
+                isEditMode={isEditMode}
+                value={closing}
+                onChange={(val) => onUpdateAboutField?.('closing', val)}
+                as="span"
+                className="inline"
+              />
+              {closing?.trim() ? '」' : ''}
+            </span>
+          </div>
+        )}
       </div>
     </section>
   );

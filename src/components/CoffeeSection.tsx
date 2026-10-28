@@ -165,7 +165,7 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
             )}
             <div>
               <span className="text-[11px] tracking-widest text-[#7E776E] block mb-2 font-mono">
-                01 · <EditableText isEditMode={isEditMode} value={coffeeContent.espresso.tag} onChange={(val) => onUpdateCoffeeText?.('espresso.tag', val)} as="span" />
+                <EditableText isEditMode={isEditMode} value={coffeeContent.espresso.tag} onChange={(val) => onUpdateCoffeeText?.('espresso.tag', val)} as="span" />
               </span>
               <EditableText
                 isEditMode={isEditMode}
@@ -221,7 +221,7 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
             )}
             <div>
               <span className="text-[11px] tracking-widest text-[#7E776E] block mb-2 font-mono">
-                02 · <EditableText isEditMode={isEditMode} value={coffeeContent.sensory.tag} onChange={(val) => onUpdateCoffeeText?.('sensory.tag', val)} as="span" />
+                <EditableText isEditMode={isEditMode} value={coffeeContent.sensory.tag} onChange={(val) => onUpdateCoffeeText?.('sensory.tag', val)} as="span" />
               </span>
               <EditableText
                 isEditMode={isEditMode}
@@ -274,7 +274,7 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
             <div className="space-y-4">
               <div>
                 <span className="text-[11px] tracking-widest text-[#7E776E] block mb-2 font-mono">
-                  03 · <EditableText isEditMode={isEditMode} value={coffeeContent.handDrip.tag} onChange={(val) => onUpdateCoffeeText?.('handDrip.tag', val)} as="span" />
+                  <EditableText isEditMode={isEditMode} value={coffeeContent.handDrip.tag} onChange={(val) => onUpdateCoffeeText?.('handDrip.tag', val)} as="span" />
                 </span>
                 <EditableText
                   isEditMode={isEditMode}
@@ -405,7 +405,7 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
               <span className="text-[11px] tracking-widest text-[#7E776E] block mb-1 font-mono">
-                04 · <EditableText isEditMode={isEditMode} value={coffeeContent.cafeVisitsIntro.tag} onChange={(val) => onUpdateCoffeeText?.('cafeVisitsIntro.tag', val)} as="span" />
+                <EditableText isEditMode={isEditMode} value={coffeeContent.cafeVisitsIntro.tag} onChange={(val) => onUpdateCoffeeText?.('cafeVisitsIntro.tag', val)} as="span" />
               </span>
               <EditableText
                 isEditMode={isEditMode}

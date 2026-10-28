@@ -1294,17 +1294,19 @@ export default function App() {
             as="p"
             className="font-serif-jp text-sm text-[#4E483F] block"
           />
-          <div className="text-[11px] text-[#938C80] font-serif-jp italic">
-            「
-            <EditableText
-              isEditMode={isAdmin && isEditMode}
-              value={activeContent.footer.quote[currentLang] || t.footer.quote}
-              onChange={(val) => handleUpdateFooter('quote', val)}
-              as="span"
-              className="inline"
-            />
-            」
-          </div>
+          {((activeContent.footer.quote[currentLang] ?? t.footer.quote)?.trim() || (isAdmin && isEditMode)) && (
+            <div className="text-[11px] text-[#938C80] font-serif-jp italic">
+              {(activeContent.footer.quote[currentLang] ?? t.footer.quote)?.trim() ? '「' : ''}
+              <EditableText
+                isEditMode={isAdmin && isEditMode}
+                value={activeContent.footer.quote[currentLang] ?? t.footer.quote}
+                onChange={(val) => handleUpdateFooter('quote', val)}
+                as="span"
+                className="inline"
+              />
+              {(activeContent.footer.quote[currentLang] ?? t.footer.quote)?.trim() ? '」' : ''}
+            </div>
+          )}
           <div className="pt-2 flex items-center justify-center gap-3 text-[11px] text-[#A69F93]">
             <span>© {new Date().getFullYear()} {profileInfo.name}. All Rights Reserved.</span>
           </div>

@@ -23,7 +23,7 @@ export const ExperienceSection: React.FC<ExperienceSectionProps> = ({
   const t = translations[currentLang];
 
   const title = siteExperience?.title[currentLang] || t.experience.title;
-  const subtitle = siteExperience?.subtitle[currentLang] || t.experience.subtitle;
+  const subtitle = siteExperience?.subtitle[currentLang] ?? t.experience.subtitle;
   const rolesLabel = siteExperience?.rolesLabel[currentLang] || (currentLang === 'ja'
     ? '実際の担当実務：'
     : currentLang === 'ko'
@@ -46,15 +46,17 @@ export const ExperienceSection: React.FC<ExperienceSectionProps> = ({
             as="h2"
             className="text-2xl sm:text-3xl font-serif-jp text-[#1C1A19] font-normal tracking-wide block"
           />
-          <div className="mt-2">
-            <EditableText
-              isEditMode={isEditMode}
-              value={subtitle}
-              onChange={(val) => onUpdateExperienceText?.('subtitle', val)}
-              as="p"
-              className="text-sm text-[#736D64] max-w-xl block"
-            />
-          </div>
+          {(subtitle?.trim() || isEditMode) && (
+            <div className="mt-2">
+              <EditableText
+                isEditMode={isEditMode}
+                value={subtitle}
+                onChange={(val) => onUpdateExperienceText?.('subtitle', val)}
+                as="p"
+                className="text-sm text-[#736D64] max-w-xl block"
+              />
+            </div>
+          )}
           <div className="w-12 h-[1px] bg-[#B0A799] mt-4" />
         </div>
 

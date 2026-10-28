@@ -19,9 +19,9 @@ export const ValuesSection: React.FC<ValuesSectionProps> = ({
   const t = translations[currentLang];
 
   const title = siteValues?.title[currentLang] || t.values.title;
-  const subtitle = siteValues?.subtitle[currentLang] || t.values.subtitle;
+  const subtitle = siteValues?.subtitle[currentLang] ?? t.values.subtitle;
   const items = siteValues?.items[currentLang] || t.values.items;
-  const closing = siteValues?.closing[currentLang] || t.values.closing;
+  const closing = siteValues?.closing[currentLang] ?? t.values.closing;
 
   return (
     <section id="values" className="py-20 md:py-28 border-b border-[#EDE8DF]">
@@ -38,15 +38,17 @@ export const ValuesSection: React.FC<ValuesSectionProps> = ({
             as="h2"
             className="text-2xl sm:text-3xl font-serif-jp text-[#1C1A19] font-normal tracking-wide block"
           />
-          <div className="mt-2">
-            <EditableText
-              isEditMode={isEditMode}
-              value={subtitle}
-              onChange={(val) => onUpdateValuesText?.('subtitle', val)}
-              as="p"
-              className="text-sm text-[#736D64] max-w-xl block"
-            />
-          </div>
+          {(subtitle?.trim() || isEditMode) && (
+            <div className="mt-2">
+              <EditableText
+                isEditMode={isEditMode}
+                value={subtitle}
+                onChange={(val) => onUpdateValuesText?.('subtitle', val)}
+                as="p"
+                className="text-sm text-[#736D64] max-w-xl block"
+              />
+            </div>
+          )}
           <div className="w-12 h-[1px] bg-[#B0A799] mt-4" />
         </div>
 
@@ -82,19 +84,21 @@ export const ValuesSection: React.FC<ValuesSectionProps> = ({
         </div>
 
         {/* Final Reflective Message */}
-        <div className="mt-14 sm:mt-18 p-8 rounded-lg bg-[#F5F0E6] border border-[#E0D7C9] text-center max-w-2xl mx-auto">
-          <span className="font-serif-jp text-base sm:text-lg text-[#2E2822] leading-relaxed">
-            「
-            <EditableText
-              isEditMode={isEditMode}
-              value={closing}
-              onChange={(val) => onUpdateValuesText?.('closing', val)}
-              as="span"
-              className="inline"
-            />
-            」
-          </span>
-        </div>
+        {(closing?.trim() || isEditMode) && (
+          <div className="mt-14 sm:mt-18 p-8 rounded-lg bg-[#F5F0E6] border border-[#E0D7C9] text-center max-w-2xl mx-auto">
+            <span className="font-serif-jp text-base sm:text-lg text-[#2E2822] leading-relaxed">
+              {closing?.trim() ? '「' : ''}
+              <EditableText
+                isEditMode={isEditMode}
+                value={closing}
+                onChange={(val) => onUpdateValuesText?.('closing', val)}
+                as="span"
+                className="inline"
+              />
+              {closing?.trim() ? '」' : ''}
+            </span>
+          </div>
+        )}
       </div>
     </section>
   );
