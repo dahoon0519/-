@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { uploadPortfolioMedia } from '../utils/mediaUpload';
 import {
   Language,
   LatteArtPhoto,
@@ -236,6 +237,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     | 'adminEmail'
   >('categories');
   const [notification, setNotification] = useState<string | null>(null);
+  const [isHeroUploading, setIsHeroUploading] = useState(false);
   const [isRestoringSnapshot, setIsRestoringSnapshot] = useState(false);
   const [snapshotResult, setSnapshotResult] = useState<string | null>(null);
 
@@ -292,30 +294,33 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Hero Upload
-  const handleHeroFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Hero media uses the same signed Cloudinary direct-upload flow as
+  // latte-art, coffee and food media. Never embed a video as a Base64 data URL.
+  const handleHeroFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const isVideo = file.type.startsWith('video/');
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const imageUrl = event.target?.result as string | undefined;
-        if (imageUrl) {
-          onUpdateHeroPhoto({
-            ...heroPhoto,
-            imageUrl,
-            mediaType: isVideo ? 'video' : 'image',
-          });
-          showNotify(
-            t(
-              'ホーム代表メディアを更新しました',
-              '홈 대표 사진·영상을 변경했습니다',
-              'Updated hero media'
-            )
-          );
-        }
-      };
-      reader.readAsDataURL(file);
+    if (!file || !isAdmin || isHeroUploading) return;
+    setIsHeroUploading(true);
+    try {
+      const media = await uploadPortfolioMedia(file, currentLang);
+      onUpdateHeroPhoto({
+        ...heroPhoto,
+        imageUrl: media.url,
+        mediaType: media.mediaType,
+      });
+      showNotify(t(
+        '代表メディアを変更しました。保存・公開すると他の端末にも反映されます。',
+        '대표 미디어를 변경했어요. 임시저장·게시 후 다른 기기에도 반영됩니다.',
+        'Hero media updated. Save and publish to show it on other devices.'
+      ));
+    } catch (error: any) {
+      alert(error?.message || t(
+        'メディアのアップロードに失敗しました。',
+        '대표 미디어 업로드에 실패했어요.',
+        'Hero media upload failed.'
+      ));
+    } finally {
+      setIsHeroUploading(false);
+      e.target.value = '';
     }
   };
 
@@ -1101,11 +1106,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         )}
                         <label className="absolute inset-0 bg-black/60 text-white opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-[10px] cursor-pointer transition-opacity">
                           <Upload className="w-5 h-5 mb-1" />
-                          <span>{t('変更', '변경', 'Change')}</span>
+                          <span>{isHeroUploading
+                            ? t('アップロード中...', '업로드 중...', 'Uploading...')
+                            : t('変更', '변경', 'Change')}</span>
                           <input
                             type="file"
-                            accept="image/*,video/*"
+                            accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm"
                             onChange={handleHeroFileUpload}
+                            disabled={isHeroUploading}
                             className="hidden"
                           />
                         </label>

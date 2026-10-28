@@ -761,6 +761,13 @@ export default function App() {
     });
   };
 
+  const handleUpdateHeroPhoto = (photo: HeroPhotoInfo) => {
+    // Legacy local cache is kept for compatibility, but SiteContent is the
+    // source of truth for drafts, publishing, and other visitors/devices.
+    setHeroPhoto(photo);
+    updateActiveContent((prev) => ({ ...prev, heroPhoto: photo }));
+  };
+
   const handleUpdateFooter = (field: 'text' | 'quote', value: string) => {
     updateActiveContent((prev) => ({
       ...prev,
@@ -1082,15 +1089,15 @@ export default function App() {
         {/* 1. Home Section with customizable hero photo / video */}
         <HomeSection
           currentLang={currentLang}
-          heroPhoto={heroPhoto}
+          heroPhoto={activeContent.heroPhoto || heroPhoto}
           onOpenPhoto={setSelectedPhoto}
           isAdmin={isAdmin}
           onChangeHeroPhoto={(url, mediaType) =>
-            setHeroPhoto((prev) => ({
-              ...prev,
+            handleUpdateHeroPhoto({
+              ...(activeContent.heroPhoto || heroPhoto),
               imageUrl: url,
               mediaType: mediaType || (isVideoMedia(url) ? 'video' : 'image'),
-            }))
+            })
           }
           onOpenAdmin={() => setIsAdminModalOpen(true)}
           siteHero={activeContent.hero}
@@ -1218,8 +1225,8 @@ export default function App() {
         adminUser={adminUser}
         onLogin={handleAdminLogin}
         onLogout={handleAdminLogout}
-        heroPhoto={heroPhoto}
-        onUpdateHeroPhoto={setHeroPhoto}
+        heroPhoto={activeContent.heroPhoto || heroPhoto}
+        onUpdateHeroPhoto={handleUpdateHeroPhoto}
         lattePhotos={activeContent.lattePhotos || lattePhotos}
         onUpdateLattePhotos={handleUpdateLattePhotos}
         cafeVisits={activeContent.cafeVisits || cafeVisits}

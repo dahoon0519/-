@@ -190,7 +190,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*,video/*"
+                    accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm"
                     onChange={handleHeroFileChange}
                     className="hidden"
                   />
