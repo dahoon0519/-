@@ -5,6 +5,13 @@ import { chromium } from 'playwright';
 const pr = process.env.PR_NUMBER;
 assert.match(pr || '', /^[1-9][0-9]*$/);
 const url = 'https://deploy-preview-' + pr + '--dahoon-hospitality.netlify.app';
+const publicResponse = await fetch(url + '/api/content/published');
+assert.equal(publicResponse.status, 200);
+const publicContent = await publicResponse.json();
+const hero = publicContent.published?.heroPhoto;
+assert.ok(hero?.imageUrl, 'Published hero media URL is missing');
+const expectedTag = hero.mediaType === 'video' || /\\.(mp4|webm)(?:[?#]|$)/i.test(hero.imageUrl) ? 'video' : 'img';
+console.log('Published hero expected media element:', expectedTag);
 const browser = await chromium.launch({ headless: true });
 await mkdir('test-artifacts', { recursive: true });
 
@@ -22,9 +29,16 @@ async function checkViewport(label, device) {
     assert.ok(title.trim().length > 0, label + ': missing hero heading');
     console.log('[PASS] ' + label + ': React home content is rendered');
 
-    const media = page.locator('#home video, #home img').first();
-    await media.waitFor({ state: 'visible', timeout: 15000 });
+    // Wait for asynchronous published content hydration, not the initial
+    // default image rendered before /api/content/published finishes loading.
+    await page.waitForFunction(({ tag, src }) => {
+      const el = document.querySelector('#home ' + tag);
+      return el && el.getAttribute('src') === src && el.getBoundingClientRect().height > 0;
+    }, { tag: expectedTag, src: hero.imageUrl }, { timeout: 30000 });
+    const media = page.locator('#home ' + expectedTag).first();
+    await media.waitFor({ state: 'visible', timeout: 10000 });
     const tag = await media.evaluate(el => el.tagName.toLowerCase());
+    assert.equal(tag, expectedTag);
     if (tag === 'video') {
       const flags = await media.evaluate(el => ({
         autoPlay: el.autoplay,
@@ -35,11 +49,29 @@ async function checkViewport(label, device) {
       }));
       assert.ok(flags.autoPlay && flags.loop && flags.muted && flags.playsInline && flags.src,
         label + ': representative video playback settings missing');
+      const metadataReady = await media.evaluate(video => {
+        if (video.readyState >= 1) return Promise.resolve(true);
+        return new Promise(resolve => {
+          const timer = window.setTimeout(() => finish(false), 20000);
+          const finish = success => {
+            window.clearTimeout(timer);
+            video.removeEventListener('loadedmetadata', onLoad);
+            video.removeEventListener('error', onError);
+            resolve(success);
+          };
+          const onLoad = () => finish(true);
+          const onError = () => finish(false);
+          video.addEventListener('loadedmetadata', onLoad, { once: true });
+          video.addEventListener('error', onError, { once: true });
+        });
+      });
+      assert.equal(metadataReady, true, label + ': representative video metadata could not be loaded');
+      console.log('[PASS] ' + label + ': published video URL and metadata loaded');
     } else {
       const src = await media.getAttribute('src');
-      assert.ok(src, label + ': representative image src missing');
+      assert.equal(src, hero.imageUrl, label + ': published image URL mismatch');
     }
-    console.log('[PASS] ' + label + ': representative ' + tag + ' visible');
+    console.log('[PASS] ' + label + ': published representative ' + tag + ' visible');
 
     const home = page.locator('#home');
     assert.equal(await page.locator('html').getAttribute('lang'), 'ja');
