@@ -50,7 +50,7 @@ try {
     'X-CSRF-Token': csrfToken,
     'Content-Type': 'application/json',
   };
-  const request = async (method: string, endpoint: string, body?: unknown, customHeaders = headers) => {
+  const request = async (method: string, endpoint: string, body?: unknown, customHeaders: Record<string, string> = headers) => {
     const res = await fetch(base + endpoint, {
       method,
       headers: customHeaders,
