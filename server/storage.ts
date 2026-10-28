@@ -54,7 +54,13 @@ async function getNetlifyBlobStore() {
 
   try {
     const { getStore } = await import('@netlify/blobs');
-    return getStore('portfolio-content');
+    // Production's original store name is never renamed or migrated.
+    // A preview namespace is supplied only in the Netlify deploy-preview context.
+    const namespace = process.env.PORTFOLIO_STORAGE_NAMESPACE?.trim();
+    if (namespace && !/^[a-z0-9-]{1,32}$/.test(namespace)) {
+      throw new Error('Invalid portfolio storage namespace');
+    }
+    return getStore(namespace ? `portfolio-content-${namespace}` : 'portfolio-content');
   } catch (err: any) {
     if (isProductionEnvironment()) {
       throw new Error(`Failed to initialize Netlify Blobs in production: ${err?.message}`);
@@ -194,10 +200,16 @@ export const portfolioStorage = {
         if (!store) {
           throw new Error('Netlify Blobs store is uninitialized in production.');
         }
-        const raw = await store.get('published', { type: 'json' });
+        let raw = await store.get('published', { type: 'json' });
+        // An uninitialized preview shows live content without writing to the
+        // production store. All preview edits still use its own namespace.
+        if (!raw && process.env.PORTFOLIO_STORAGE_NAMESPACE?.trim()) {
+          const { getStore } = await import('@netlify/blobs');
+          raw = await getStore('portfolio-content').get('published', { type: 'json' });
+        }
         if (raw) {
           const sanitized = sanitizeSiteContent(raw);
-          if (raw.contact?.emailValue === LEGACY_EMAIL || raw.profileInfo?.email === LEGACY_EMAIL) {
+          if (!process.env.PORTFOLIO_STORAGE_NAMESPACE?.trim() && (raw.contact?.emailValue === LEGACY_EMAIL || raw.profileInfo?.email === LEGACY_EMAIL)) {
             store.setJSON('published', sanitized).catch((err: any) => {
               console.warn('Auto-migrated legacy email in Netlify Blobs published store:', err?.message);
             });
