@@ -3,6 +3,8 @@ import express, { Request, Response, NextFunction } from 'express';
 import cookieParser from 'cookie-parser';
 import { apiRouter } from './apiRouter';
 import { isProductionEnvironment } from './auth';
+import { getPortfolioStorageNamespace } from './storage';
+import { BUILD_DEPLOY_CONTEXT } from './deployContext';
 
 export function createExpressApp() {
   const app = express();
@@ -37,16 +39,21 @@ export function createExpressApp() {
     next();
   });
 
-  // Fail closed: a deploy preview without an isolated storage namespace must
-  // never save/publish/delete data in the production site-wide Blob store.
-  // Host checking only DENIES writes; it never grants privileged access.
+  // Fail closed for any non-production deploy missing its compiled namespace.
+  // A Host header may ONLY add protection; it must never select the store.
   app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
     const hostname = (req.headers.host || '').split(':')[0].toLowerCase();
-    const previewHost = /^deploy-preview-\d+--dahoon-hospitality\.netlify\.app$/.test(hostname);
-    if (previewHost && !process.env.PORTFOLIO_STORAGE_NAMESPACE?.trim()
-        && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    const previewHost = /^deploy-preview-\\d+--dahoon-hospitality\\.netlify\\.app$/.test(hostname);
+    const nonProductionBuild = ['deploy-preview', 'branch-deploy', 'preview-server'].includes(BUILD_DEPLOY_CONTEXT);
+    try {
+      const namespace = getPortfolioStorageNamespace();
+      if ((previewHost || nonProductionBuild) && !namespace) {
+        throw new Error('Missing preview storage isolation');
+      }
+    } catch {
       return res.status(503).json({
-        error: 'Preview data isolation is not configured. Changes are disabled to protect production data.',
+        error: 'Isolated preview storage unavailable. Changes are disabled to protect production data.',
         code: 'PREVIEW_STORAGE_NOT_CONFIGURED',
       });
     }
@@ -58,7 +65,12 @@ export function createExpressApp() {
 
   // Health check
   app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({
+      status: 'ok',
+      deployContext: BUILD_DEPLOY_CONTEXT,
+      isolatedStorage: ['deploy-preview', 'branch-deploy', 'preview-server'].includes(BUILD_DEPLOY_CONTEXT),
+      timestamp: new Date().toISOString(),
+    });
   });
 
   return app;
