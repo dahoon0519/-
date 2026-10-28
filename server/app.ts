@@ -44,7 +44,7 @@ export function createExpressApp() {
   app.use('/api', (req: Request, res: Response, next: NextFunction) => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
     const hostname = (req.headers.host || '').split(':')[0].toLowerCase();
-    const previewHost = /^deploy-preview-\\d+--dahoon-hospitality\\.netlify\\.app$/.test(hostname);
+    const previewHost = /^deploy-preview-\d+--dahoon-hospitality\.netlify\.app$/.test(hostname);
     const nonProductionBuild = ['deploy-preview', 'branch-deploy', 'preview-server'].includes(BUILD_DEPLOY_CONTEXT);
     try {
       const namespace = getPortfolioStorageNamespace();
