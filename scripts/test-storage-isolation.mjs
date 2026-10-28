@@ -19,13 +19,16 @@ try {
     { label: 'PR #3 is isolated', env: { NETLIFY: 'true', CONTEXT: 'deploy-preview', REVIEW_ID: '3' }, success: true, expected: '"preview-pr3"' },
     { label: 'a different PR has a separate store', env: { NETLIFY: 'true', CONTEXT: 'deploy-preview', REVIEW_ID: '4' }, success: true, expected: '"preview-pr4"' },
     { label: 'missing review ID is rejected', env: { NETLIFY: 'true', CONTEXT: 'deploy-preview', REVIEW_ID: '' }, success: false },
-    { label: 'production retains the original store', env: { NETLIFY: 'true', CONTEXT: 'production', REVIEW_ID: '3' }, success: true, expected: 'BUILD_STORAGE_NAMESPACE: string | null = null' },
+    { label: 'production retains the original store when Cloudinary is configured', env: { NETLIFY: 'true', CONTEXT: 'production', REVIEW_ID: '3', CLOUDINARY_CLOUD_NAME: 'test-cloud', CLOUDINARY_API_KEY: '12345678', CLOUDINARY_API_SECRET: 'test-only-secret' }, success: true, expected: 'BUILD_STORAGE_NAMESPACE: string | null = null' },
+    { label: 'production blocks missing Cloudinary cloud name', env: { NETLIFY: 'true', CONTEXT: 'production', CLOUDINARY_CLOUD_NAME: '', CLOUDINARY_API_KEY: '12345678', CLOUDINARY_API_SECRET: 'test-only-secret' }, success: false },
+    { label: 'production blocks missing Cloudinary key', env: { NETLIFY: 'true', CONTEXT: 'production', CLOUDINARY_CLOUD_NAME: 'test-cloud', CLOUDINARY_API_KEY: '', CLOUDINARY_API_SECRET: 'test-only-secret' }, success: false },
+    { label: 'production blocks missing Cloudinary secret', env: { NETLIFY: 'true', CONTEXT: 'production', CLOUDINARY_CLOUD_NAME: 'test-cloud', CLOUDINARY_API_KEY: '12345678', CLOUDINARY_API_SECRET: '' }, success: false },
     { label: 'missing Netlify context is rejected', env: { NETLIFY: 'true', CONTEXT: '', REVIEW_ID: '3' }, success: false },
     { label: 'branch deployments are isolated', env: { NETLIFY: 'true', CONTEXT: 'branch-deploy', BRANCH: 'feature/example' }, success: true, expected: '"nonprod-' },
     { label: 'local development is supported', env: { NETLIFY: '', CONTEXT: '', REVIEW_ID: '' }, success: true, expected: 'BUILD_DEPLOY_CONTEXT: string = "dev"' },
   ];
   for (const test of scenarios) {
-    const env = { ...process.env, NETLIFY: '', CONTEXT: '', REVIEW_ID: '', BRANCH: '', HEAD: '', DEPLOY_ID: '', ...test.env };
+    const env = { ...process.env, NETLIFY: '', CONTEXT: '', REVIEW_ID: '', BRANCH: '', HEAD: '', DEPLOY_ID: '', CLOUDINARY_CLOUD_NAME: '', CLOUDINARY_API_KEY: '', CLOUDINARY_API_SECRET: '', ...test.env };
     const result = spawnSync(process.execPath, [entry], { env, encoding: 'utf8' });
     const ok = result.status === 0;
     assert.equal(ok, test.success, `${test.label}: ${result.stderr || result.stdout}`);
