@@ -4,7 +4,7 @@ import cookieParser from 'cookie-parser';
 import { apiRouter } from './apiRouter';
 import { isProductionEnvironment } from './auth';
 import { getPortfolioStorageNamespace } from './storage';
-import { BUILD_DEPLOY_CONTEXT } from './deployContext';
+import { BUILD_DEPLOY_CONTEXT, BUILD_COMMIT_SHA } from './deployContext';
 
 export function createExpressApp() {
   const app = express();
@@ -68,6 +68,7 @@ export function createExpressApp() {
     res.json({
       status: 'ok',
       deployContext: BUILD_DEPLOY_CONTEXT,
+      deployCommit: BUILD_COMMIT_SHA,
       isolatedStorage: ['deploy-preview', 'branch-deploy', 'preview-server'].includes(BUILD_DEPLOY_CONTEXT),
       timestamp: new Date().toISOString(),
     });
