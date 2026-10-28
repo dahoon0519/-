@@ -288,7 +288,6 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
 
                 {/* Hide unset social handles from visitors. */}
                 {currentInstagram?.trim() && !/^(?:—|-|準備中|coming soon)$/i.test(currentInstagram.trim()) && !/準備中|coming soon/i.test(currentInstagram) && (
-                {/* Instagram */}
                 <div className="flex items-center gap-3 p-3.5 bg-white border border-[#DDD6CA] rounded-lg">
                   <Instagram className="w-4 h-4 text-[#87664B] shrink-0" />
                   <div className="min-w-0 flex-1">
