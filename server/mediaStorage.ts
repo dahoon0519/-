@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import { getStore } from '@netlify/blobs';
-import { isProductionEnvironment } from './storage';
+import { isProductionEnvironment, getPortfolioStorageNamespace } from './storage';
 
 // Keep binary requests comfortably under Netlify's buffered Lambda payload limit.
 export const MAX_MEDIA_BYTES = 3 * 1024 * 1024;
@@ -22,8 +22,7 @@ const KEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 const MEDIA_DIR = path.resolve(process.cwd(), '.data', 'media');
 
 function mediaStoreName(): string {
-  const namespace = process.env.PORTFOLIO_STORAGE_NAMESPACE?.trim();
-  if (namespace && !/^[a-z0-9-]{1,32}$/.test(namespace)) throw new Error('Invalid portfolio storage namespace');
+  const namespace = getPortfolioStorageNamespace();
   return namespace ? `portfolio-media-${namespace}` : 'portfolio-media';
 }
 
@@ -65,7 +64,7 @@ export async function getPortfolioMedia(id: string): Promise<{ bytes: Buffer; mi
     let entry = await getStore(mediaStoreName()).get(id, { type: 'arrayBuffer' });
     // Old /api/media/* links from live content must remain accessible in preview.
     // Fallback is strictly read-only; preview uploads never touch production.
-    if (!entry && process.env.PORTFOLIO_STORAGE_NAMESPACE?.trim()) {
+    if (!entry && getPortfolioStorageNamespace()) {
       entry = await getStore('portfolio-media').get(id, { type: 'arrayBuffer' });
     }
     return entry ? { bytes: Buffer.from(entry), mime } : null;
