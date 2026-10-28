@@ -1,0 +1,31 @@
+name: Preview API smoke (read-only)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  preview-http:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact PR commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Check deployed preview, published data, and permission denials
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/test-deployed-preview.mjs
