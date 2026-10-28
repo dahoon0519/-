@@ -42,7 +42,7 @@ export function createExpressApp() {
   // Host checking only DENIES writes; it never grants privileged access.
   app.use('/api', (req: Request, res: Response, next: NextFunction) => {
     const hostname = (req.headers.host || '').split(':')[0].toLowerCase();
-    const previewHost = /^deploy-preview-\\d+--dahoon-hospitality\\.netlify\\.app$/.test(hostname);
+    const previewHost = /^deploy-preview-\d+--dahoon-hospitality\.netlify\.app$/.test(hostname);
     if (previewHost && !process.env.PORTFOLIO_STORAGE_NAMESPACE?.trim()
         && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       return res.status(503).json({
