@@ -21,6 +21,12 @@ const EXTENSION_TO_MIME: Record<string, string> = Object.fromEntries(
 const KEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp|gif|mp4|webm)$/;
 const MEDIA_DIR = path.resolve(process.cwd(), '.data', 'media');
 
+function mediaStoreName(): string {
+  const namespace = process.env.PORTFOLIO_STORAGE_NAMESPACE?.trim();
+  if (namespace && !/^[a-z0-9-]{1,32}$/.test(namespace)) throw new Error('Invalid portfolio storage namespace');
+  return namespace ? `portfolio-media-${namespace}` : 'portfolio-media';
+}
+
 function hasMatchingFileSignature(bytes: Buffer, mime: string): boolean {
   if (mime === 'image/jpeg') return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
   if (mime === 'image/png') return bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
@@ -40,7 +46,7 @@ export async function savePortfolioMedia(bytes: Buffer, contentType: string): Pr
 
   const key = crypto.randomUUID() + '.' + extension;
   if (isProductionEnvironment()) {
-    const store = getStore('portfolio-media');
+    const store = getStore(mediaStoreName());
     const { modified } = await store.set(key, Uint8Array.from(bytes).buffer, { onlyIfNew: true });
     if (!modified) throw new Error('Could not reserve an unused media identifier');
   } else {
@@ -56,7 +62,12 @@ export async function getPortfolioMedia(id: string): Promise<{ bytes: Buffer; mi
   const mime = EXTENSION_TO_MIME[ext];
   if (!mime) return null;
   if (isProductionEnvironment()) {
-    const entry = await getStore('portfolio-media').get(id, { type: 'arrayBuffer' });
+    let entry = await getStore(mediaStoreName()).get(id, { type: 'arrayBuffer' });
+    // Old /api/media/* links from live content must remain accessible in preview.
+    // Fallback is strictly read-only; preview uploads never touch production.
+    if (!entry && process.env.PORTFOLIO_STORAGE_NAMESPACE?.trim()) {
+      entry = await getStore('portfolio-media').get(id, { type: 'arrayBuffer' });
+    }
     return entry ? { bytes: Buffer.from(entry), mime } : null;
   }
   try {
