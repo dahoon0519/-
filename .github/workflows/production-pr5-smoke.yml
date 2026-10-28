@@ -1,0 +1,31 @@
+name: Production PR5 backup release smoke (read-only)
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-verification:
+    # Run once on the approved PR #5 merge, not on future content edits.
+    if: "startsWith(github.event.head_commit.message, 'Release portfolio PR #5:')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout deployed source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirm exact production deploy, published checksum and video
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: node scripts/test-production-deploy.mjs
+      - name: Confirm backup endpoints do not expose unauthorized data or writes
+        run: node scripts/test-production-backup-guards.mjs
