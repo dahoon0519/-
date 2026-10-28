@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { uploadPortfolioMedia } from '../utils/mediaUpload';
+import { apiClient } from '../services/apiClient';
 import {
   Language,
   LatteArtPhoto,
@@ -232,6 +233,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   >('categories');
   const [notification, setNotification] = useState<string | null>(null);
   const [isHeroUploading, setIsHeroUploading] = useState(false);
+  const [checkingCloudinary, setCheckingCloudinary] = useState(false);
+  const [cloudinaryResult, setCloudinaryResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const t = (ja: string, ko: string, en: string) =>
     currentLang === 'ja' ? ja : currentLang === 'ko' ? ko : en;
@@ -285,6 +288,30 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   };
 
   if (!isOpen) return null;
+
+  // This verifies the *deployed* admin-only signing endpoint without uploading
+  // or changing any media. A real file upload is still needed for end-to-end proof.
+  const checkCloudinaryConnection = async () => {
+    setCheckingCloudinary(true);
+    setCloudinaryResult(null);
+    try {
+      const signed = await apiClient.post<{
+        cloudName: string; apiKey: string; folder: string;
+        signature: string; publicId: string; timestamp: number;
+      }>('/api/media/cloudinary/sign', {});
+      if (!signed.signature || !signed.apiKey || signed.folder !== 'dahoon-portfolio') {
+        throw new Error('Invalid signed upload configuration');
+      }
+      setCloudinaryResult({ ok: true, message: t(
+        'サーバー署名を確認しました（実ファイルの転送は未実施）。',
+        '서버 업로드 서명을 확인했습니다. 실제 파일 업로드는 아직 별도 확인이 필요합니다.',
+        'Server signing is ready. Actual file upload is not yet tested.') });
+    } catch (err: any) {
+      setCloudinaryResult({ ok: false, message: err?.message || 'Upload signing is unavailable' });
+    } finally {
+      setCheckingCloudinary(false);
+    }
+  };
 
   // Hero media uses the same signed Cloudinary direct-upload flow as
   // latte-art, coffee and food media. Never embed a video as a Base64 data URL.
@@ -946,6 +973,29 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         'The primary media displayed on the hero banner. You can upload an image or video.'
                       )}
                     </p>
+                  </div>
+
+                  <div className="rounded-lg border border-[#E0D8CC] bg-[#F8F5EF] p-3 space-y-2">
+                    <div className="font-medium text-xs text-[#3B3028]">
+                      {t('Cloudinary 接続診断', 'Cloudinary 연결 진단', 'Cloudinary connection check')}
+                    </div>
+                    <p className="text-[11px] text-[#766B60]">
+                      {t('管理者セッションで署名APIを検査します。写真や動画はアップロードしません。',
+                        '관리자 로그인 상태로 업로드 서명 API만 점검합니다. 사진·영상 파일은 업로드하지 않습니다.',
+                        'Checks the authenticated upload-signing API without uploading a file.')}
+                    </p>
+                    <button type="button" disabled={checkingCloudinary || isHeroUploading}
+                      onClick={checkCloudinaryConnection}
+                      className="rounded border border-[#CABDAE] bg-white px-3 py-1.5 text-xs disabled:opacity-50">
+                      {checkingCloudinary ? t('確認中...', '확인 중...', 'Checking...') :
+                        t('署名APIを検査', '업로드 연결 확인', 'Check upload connection')}
+                    </button>
+                    {cloudinaryResult && <p role="status" className={
+                      'text-[11px] p-2 rounded border ' + (cloudinaryResult.ok
+                        ? 'text-emerald-800 bg-emerald-50 border-emerald-200'
+                        : 'text-red-800 bg-red-50 border-red-200')}>
+                      {cloudinaryResult.message}
+                    </p>}
                   </div>
 
                   <div className="bg-white border border-[#E0D8CC] rounded-lg p-4 space-y-4">
