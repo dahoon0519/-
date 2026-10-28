@@ -10,6 +10,18 @@ if (!supported.has(context)) {
   throw new Error('Missing or unsupported Netlify deploy CONTEXT. Refusing unsafe build.');
 }
 
+// Production must not deploy new media-editing code without the exact three
+// runtime credentials required by the Cloudinary signing endpoint. Netlify
+// includes these keys in the build environment when their scope includes Builds.
+// Fail before generating artifacts; never print credential values.
+if (context === 'production') {
+  for (const name of ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET']) {
+    if (!process.env[name]?.trim()) {
+      throw new Error(`Production build blocked: missing ${name}. Configure the production Netlify environment before merging.`);
+    }
+  }
+}
+
 let namespace = null;
 if (context === 'deploy-preview') {
   const reviewId = (process.env.REVIEW_ID || '').trim();
