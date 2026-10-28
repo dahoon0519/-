@@ -10,7 +10,7 @@ import { join } from 'node:path';
 const previousDirectory = process.cwd();
 const directory = mkdtempSync(join(tmpdir(), 'portfolio-admin-workflow-'));
 const previousEnv = Object.fromEntries(
-  ['SESSION_SECRET', 'NETLIFY', 'NETLIFY_BLOBS_CONTEXT', 'NODE_ENV', 'APP_URL'].map(key => [key, process.env[key]])
+  ['SESSION_SECRET', 'NETLIFY', 'NETLIFY_BLOBS_CONTEXT', 'NODE_ENV', 'APP_URL', 'CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'].map(key => [key, process.env[key]])
 );
 process.env.SESSION_SECRET = crypto.randomBytes(32).toString('hex');
 delete process.env.NETLIFY;
@@ -72,6 +72,26 @@ try {
   res = await request('GET', '/api/content/draft', undefined, { Cookie: 'admin_session=' + badToken });
   assert.equal(res.status, 401);
   pass('Authentication and CSRF protections remain enforced');
+  // Validate the authenticated Cloudinary signing flow WITHOUT uploading a
+  // media file or using any production API credentials.
+  process.env.CLOUDINARY_CLOUD_NAME = 'local-test-cloud';
+  process.env.CLOUDINARY_API_KEY = '1234567890123';
+  process.env.CLOUDINARY_API_SECRET = 'local-test-cloudinary-secret';
+  res = await request('POST', '/api/media/cloudinary/sign', {}, { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken, Cookie: 'XSRF-TOKEN=' + csrfToken });
+  assert.equal(res.status, 401);
+  res = await request('POST', '/api/media/cloudinary/sign', {});
+  assert.equal(res.status, 200);
+  assert.equal(res.data.cloudName, 'local-test-cloud');
+  assert.equal(res.data.folder, 'dahoon-portfolio');
+  assert.match(res.data.publicId, /^[0-9a-f-]{36}$/);
+  const check = 'folder=' + res.data.folder + '&public_id=' + res.data.publicId + '&timestamp=' + res.data.timestamp + process.env.CLOUDINARY_API_SECRET;
+  assert.equal(res.data.signature, crypto.createHash('sha1').update(check).digest('hex'));
+  assert.equal(res.data.apiSecret, undefined);
+  pass('Cloudinary upload signing requires administrator and returns valid test SHA-1 signature with no secret leakage');
+  delete process.env.CLOUDINARY_CLOUD_NAME;
+  delete process.env.CLOUDINARY_API_KEY;
+  delete process.env.CLOUDINARY_API_SECRET;
+
 
   const initial = {
     heroPhoto: {
