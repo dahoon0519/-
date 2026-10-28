@@ -430,6 +430,10 @@ apiRouter.post('/content/publish', requireAdminAuth, async (req: AuthenticatedRe
   }
 
   try {
+    // A durable recovery point must exist before the live document changes.
+    // If backup creation fails, publishing fails closed (no live write).
+    await portfolioStorage.createSafetyBackup('Before Publish');
+
     // 1. Save published content to authoritative storage
     await portfolioStorage.setPublishedContent(published);
 
@@ -463,6 +467,103 @@ apiRouter.post('/content/publish', requireAdminAuth, async (req: AuthenticatedRe
       error: 'Persistent storage unavailable: Failed to publish content',
       details: err.message,
     });
+  }
+});
+
+/**
+ * Server-backed portfolio document backup. Authenticated administrator only.
+ * Inquiries (personal data) and media binary files are intentionally excluded.
+ * Every media URL remains in the exported SiteContent documents.
+ */
+apiRouter.get('/content/backups/export', requireAdminAuth, async (_req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const [published, draft, history] = await Promise.all([
+      portfolioStorage.getPublishedContent(),
+      portfolioStorage.getDraftContent(),
+      portfolioStorage.getVersionHistory(),
+    ]);
+    return res.json({
+      format: 'dahoon-portfolio-documents',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      published,
+      draft,
+      history,
+      media: 'references-only',
+      inquiries: 'excluded',
+    });
+  } catch (error: any) {
+    return res.status(503).json({ error: 'Backup export unavailable', details: error.message });
+  }
+});
+
+apiRouter.get('/content/backups', requireAdminAuth, async (_req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    return res.json({ backups: await portfolioStorage.getSafetyBackups() });
+  } catch (error: any) {
+    return res.status(503).json({ error: 'Could not list recovery points', details: error.message });
+  }
+});
+
+apiRouter.post('/content/backups/create', requireAdminAuth, async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const backup = await portfolioStorage.createSafetyBackup('Manual administrator backup');
+    return res.status(201).json({ success: true, backup });
+  } catch (error: any) {
+    return res.status(503).json({ error: 'Could not create recovery point', details: error.message });
+  }
+});
+
+function isPortfolioDocument(value: any): boolean {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value)
+    && typeof value.hero?.name === 'string'
+    && typeof value.contact?.emailValue === 'string'
+    && value.hero?.name.trim()
+    && value.contact?.emailValue.trim()
+    && Array.isArray(value.categories));
+}
+
+/** Restore a server recovery point ONLY into Draft, never directly live. */
+apiRouter.post('/content/backups/restore-draft', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const { id, source } = req.body || {};
+  if (typeof id !== 'string' || !/^[0-9]{13}-[a-f0-9-]{36}$/.test(id)
+      || (source !== 'draft' && source !== 'published')) {
+    return res.status(400).json({ error: 'Invalid recovery point or source' });
+  }
+  try {
+    const saved = await portfolioStorage.getSafetyBackup(id);
+    if (!saved) return res.status(404).json({ error: 'Recovery point not found' });
+    const document = source === 'draft' ? saved.draft : saved.published;
+    if (!isPortfolioDocument(document)) return res.status(422).json({ error: 'Recovery point has no valid document of that type' });
+    const backup = await portfolioStorage.createSafetyBackup('Before recovery to Draft');
+    await portfolioStorage.setDraftContent({
+      ...document, updatedAt: new Date().toISOString(), updatedBy: req.adminSession?.email,
+    });
+    return res.json({ success: true, backup, restoredTo: 'draft' });
+  } catch (error: any) {
+    return res.status(503).json({ error: 'Recovery to draft failed', details: error.message });
+  }
+});
+
+/** Import a downloaded server backup into Draft, preserving the public site. */
+apiRouter.post('/content/backups/import-draft', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const { backup: file, source } = req.body || {};
+  if (!file || file.format !== 'dahoon-portfolio-documents' || file.version !== 1
+      || (source !== 'published' && source !== 'draft')) {
+    return res.status(400).json({ error: 'Unrecognized server backup document' });
+  }
+  const document = source === 'draft' ? file.draft : file.published;
+  if (!isPortfolioDocument(document)) return res.status(422).json({ error: 'Backup contains no valid portfolio document of this type' });
+  try {
+    const backup = await portfolioStorage.createSafetyBackup('Before imported Draft');
+    await portfolioStorage.setDraftContent({
+      ...document, updatedAt: new Date().toISOString(), updatedBy: req.adminSession?.email,
+    });
+    return res.json({ success: true, backup, restoredTo: 'draft' });
+  } catch (error: any) {
+    return res.status(503).json({ error: 'Import to draft failed', details: error.message });
   }
 });
 
@@ -506,6 +607,7 @@ apiRouter.post('/content/restore', requireAdminAuth, async (req: AuthenticatedRe
       restoredBy: req.adminSession?.email,
     };
 
+    await portfolioStorage.createSafetyBackup('Before version restore');
     await portfolioStorage.setPublishedContent(restored);
     await portfolioStorage.clearDraftContent();
 
