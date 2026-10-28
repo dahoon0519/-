@@ -140,6 +140,63 @@ try {
   assert.equal(res.data.history.length, 2);
   pass('Version restore recovers original media, coffee records and published text');
 
+  // Server backup endpoints must be protected; no backend content is changed
+  // when non-admin visitors attempt to export or restore documents.
+  res = await request('GET', '/api/content/backups/export', undefined, {});
+  assert.equal(res.status, 401);
+  res = await request('POST', '/api/content/backups/create', {}, { Cookie: headers.Cookie, 'Content-Type': 'application/json' });
+  assert.equal(res.status, 403);
+  pass('Server backup export and restore actions require administrator and CSRF');
+
+  res = await request('GET', '/api/content/backups/export');
+  assert.equal(res.status, 200);
+  assert.equal(res.data.format, 'dahoon-portfolio-documents');
+  assert.equal(res.data.media, 'references-only');
+  assert.equal(res.data.inquiries, 'excluded');
+  assert.equal(res.data.published.heroPhoto.imageUrl, initial.heroPhoto.imageUrl);
+  assert.equal(res.data.history.length, 2);
+  pass('Server export includes published content/history and media URLs, never inquiry data');
+
+  res = await request('GET', '/api/content/backups');
+  assert.equal(res.status, 200);
+  assert.ok(res.data.backups.length >= 3);
+  assert.ok(res.data.backups.some((item: any) => item.reason === 'Before Publish'));
+  assert.ok(res.data.backups.some((item: any) => item.reason === 'Before version restore'));
+  pass('Automatic immutable recovery points exist before Publish and live Restore');
+
+  const { defaultSiteContent } = await import('../src/data/defaultSiteContent');
+  res = await request('POST', '/api/content/draft', { content: defaultSiteContent });
+  assert.equal(res.status, 200);
+  res = await request('POST', '/api/content/backups/create', {});
+  assert.equal(res.status, 201);
+  const manualBackupId: string = res.data.backup.id;
+  assert.match(manualBackupId, /^[0-9]{13}-[a-f0-9-]{36}$/);
+  res = await request('POST', '/api/content/draft', { content: initial });
+  assert.equal(res.status, 200);
+  res = await request('POST', '/api/content/backups/restore-draft', { id: manualBackupId, source: 'draft' });
+  assert.equal(res.status, 200);
+  res = await request('GET', '/api/content/draft');
+  assert.equal(res.data.draft.hero.name, defaultSiteContent.hero.name);
+  res = await request('GET', '/api/content/published');
+  assert.equal(res.data.published.heroPhoto.title, initial.heroPhoto.title);
+  pass('Manual recovery point restores a real document to Draft without modifying published data');
+
+  res = await request('POST', '/api/content/backups/import-draft', {
+    backup: { format: 'dahoon-portfolio-documents', version: 1, published: { invalid: true } },
+    source: 'published',
+  });
+  assert.equal(res.status, 422);
+  res = await request('POST', '/api/content/backups/import-draft', {
+    backup: { format: 'dahoon-portfolio-documents', version: 1, published: defaultSiteContent },
+    source: 'published',
+  });
+  assert.equal(res.status, 200);
+  res = await request('GET', '/api/content/draft');
+  assert.equal(res.data.draft.hero.name, defaultSiteContent.hero.name);
+  res = await request('GET', '/api/content/published');
+  assert.equal(res.data.published.heroPhoto.imageUrl, initial.heroPhoto.imageUrl);
+  pass('Backup JSON import validates structure and restores only Draft, not the live homepage');
+
   // Verify failed persistent writes do not give a success response.
   setSimulateStorageFailureForTest(true);
   try {
@@ -156,6 +213,7 @@ try {
   const stored = JSON.parse(readFileSync(join(directory, '.data', 'portfolio-store.json'), 'utf8'));
   assert.equal(stored.published.heroPhoto.title, initial.heroPhoto.title);
   assert.equal(stored.history.length, 2);
+  assert.ok(stored.safetyBackups.length >= 5);
   pass('All writes are contained within the ephemeral test directory');
   console.log('All authenticated LOCAL Draft/Publish/Restore HTTP integration tests passed.');
 } finally {
