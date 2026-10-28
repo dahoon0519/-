@@ -10,7 +10,7 @@ assert.equal(publicResponse.status, 200);
 const publicContent = await publicResponse.json();
 const hero = publicContent.published?.heroPhoto;
 assert.ok(hero?.imageUrl, 'Published hero media URL is missing');
-const expectedTag = hero.mediaType === 'video' || /\\.(mp4|webm)(?:[?#]|$)/i.test(hero.imageUrl) ? 'video' : 'img';
+const expectedTag = hero.mediaType === 'video' || /\.(mp4|webm)(?:[?#]|$)/i.test(hero.imageUrl) ? 'video' : 'img';
 console.log('Published hero expected media element:', expectedTag);
 const browser = await chromium.launch({ headless: true });
 await mkdir('test-artifacts', { recursive: true });
