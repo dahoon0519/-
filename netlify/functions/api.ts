@@ -2,7 +2,10 @@ import serverless from 'serverless-http';
 import { connectLambda } from '@netlify/blobs';
 import { createExpressApp } from '../../server/app';
 
-const expressHandler = serverless(createExpressApp());
+const expressHandler = serverless(createExpressApp(), {
+  // Ensure Lambda encodes image/video responses correctly as binary.
+  binary: ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm'],
+});
 
 /**
  * Initialize Netlify Blobs from the Lambda event before serving requests.

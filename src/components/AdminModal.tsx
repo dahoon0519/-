@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { uploadPortfolioMedia } from '../utils/mediaUpload';
 import {
   Language,
   LatteArtPhoto,
@@ -236,6 +237,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     | 'adminEmail'
   >('categories');
   const [notification, setNotification] = useState<string | null>(null);
+  const [isHeroUploading, setIsHeroUploading] = useState(false);
   const [isRestoringSnapshot, setIsRestoringSnapshot] = useState(false);
   const [snapshotResult, setSnapshotResult] = useState<string | null>(null);
 
@@ -292,30 +294,44 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Hero Upload
-  const handleHeroFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Hero media uses the same signed Cloudinary direct-upload flow as
+  // latte-art, coffee and food media. Never embed a video as a Base64 data URL.
+  const handleHeroFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const isVideo = file.type.startsWith('video/');
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const imageUrl = event.target?.result as string | undefined;
-        if (imageUrl) {
-          onUpdateHeroPhoto({
-            ...heroPhoto,
-            imageUrl,
-            mediaType: isVideo ? 'video' : 'image',
-          });
-          showNotify(
-            t(
-              'ホーム代表メディアを更新しました',
-              '홈 대표 사진·영상을 변경했습니다',
-              'Updated hero media'
-            )
-          );
-        }
+    if (!file || !isAdmin || isHeroUploading) return;
+    setIsHeroUploading(true);
+    try {
+      const media = await uploadPortfolioMedia(file, currentLang);
+      const updatedHero: HeroPhotoInfo = {
+        ...heroPhoto,
+        imageUrl: media.url,
+        mediaType: media.mediaType,
       };
-      reader.readAsDataURL(file);
+      onUpdateHeroPhoto(updatedHero);
+      // Persist the precise new value immediately as a draft; changing
+      // tabs or refreshing must not silently discard an uploaded video.
+      const saved = await onSaveDraft?.({ ...siteContent, heroPhoto: updatedHero });
+      if (saved === false) {
+        throw new Error(t(
+          '動画はアップロードされましたが下書き保存に失敗しました。',
+          '영상 업로드는 성공했지만 임시저장에 실패했어요.',
+          'Media uploaded but draft save failed.'
+        ));
+      }
+      showNotify(t(
+        '代表メディアを下書き保存しました。公開するには「公開」を押してください。',
+        '대표 미디어가 임시저장됐어요. 공개하려면 게시 버튼을 누르세요.',
+        'Hero media saved as a draft. Press Publish to make it public.'
+      ));
+    } catch (error: any) {
+      alert(error?.message || t(
+        'メディアのアップロードに失敗しました。',
+        '대표 미디어 업로드에 실패했어요.',
+        'Hero media upload failed.'
+      ));
+    } finally {
+      setIsHeroUploading(false);
+      e.target.value = '';
     }
   };
 
@@ -1101,11 +1117,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         )}
                         <label className="absolute inset-0 bg-black/60 text-white opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-[10px] cursor-pointer transition-opacity">
                           <Upload className="w-5 h-5 mb-1" />
-                          <span>{t('変更', '변경', 'Change')}</span>
+                          <span>{isHeroUploading
+                            ? t('アップロード中...', '업로드 중...', 'Uploading...')
+                            : t('変更', '변경', 'Change')}</span>
                           <input
                             type="file"
-                            accept="image/*,video/*"
+                            accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm"
                             onChange={handleHeroFileUpload}
+                            disabled={isHeroUploading}
                             className="hidden"
                           />
                         </label>
@@ -1139,6 +1158,50 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                           />
                         </div>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Persistent hero controls: visible from the Home tab without switching pages. */}
+                  <div className="rounded-md border border-[#DDD6CA] bg-[#F7F3EC] px-4 py-3 space-y-3">
+                    <p className="text-xs text-[#62594E] leading-relaxed">
+                      {t(
+                        '写真・動画の変更は下書きとして保存されます。訪問者にも表示するには「公開」を押してください。',
+                        '대표 사진·영상 변경은 먼저 임시저장돼요. 방문자에게도 보이게 하려면 게시하세요.',
+                        'Hero changes are saved as a draft. Publish to show them to visitors.'
+                      )}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={isHeroUploading || !onSaveDraft}
+                        onClick={async () => {
+                          if (!onSaveDraft) return;
+                          const success = await onSaveDraft({ ...siteContent, heroPhoto });
+                          if (success) showNotify(t('下書きを保存しました', '임시저장 완료', 'Draft saved'));
+                        }}
+                        className="px-4 py-2 rounded border border-[#B9A994] bg-white hover:bg-[#F0E9DE] disabled:opacity-50 text-xs text-[#42392E]"
+                      >
+                        {t('下書きを保存', '임시저장', 'Save Draft')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isHeroUploading || !onPublish}
+                        onClick={async () => {
+                          if (!onPublish) return;
+                          const success = await onPublish(
+                            { ...siteContent, heroPhoto },
+                            'Updated home representative media'
+                          );
+                          if (success) showNotify(t(
+                            '代表メディアを公開しました',
+                            '대표 사진·영상 게시 완료',
+                            'Hero media published'
+                          ));
+                        }}
+                        className="px-4 py-2 rounded bg-[#4A3B2C] hover:bg-[#30251B] disabled:opacity-50 text-white text-xs"
+                      >
+                        {t('公開', '게시', 'Publish')}
+                      </button>
                     </div>
                   </div>
 

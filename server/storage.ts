@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { BUILD_DEPLOY_CONTEXT, BUILD_STORAGE_NAMESPACE } from './deployContext';
 
 // Define store item types
 export interface StorageData {
@@ -43,6 +44,28 @@ export function isNetlifyBlobsAvailable(): boolean {
 }
 
 /**
+ * Production keeps the historical site-wide store; non-production Netlify
+ * builds carry an immutable per-preview/branch namespace compiled at build time.
+ * No browser-controlled hostname or untrusted request data decides storage.
+ */
+export function getPortfolioStorageNamespace(): string | null {
+  if (BUILD_DEPLOY_CONTEXT === 'production') return null;
+  if (['deploy-preview', 'branch-deploy', 'preview-server'].includes(BUILD_DEPLOY_CONTEXT)) {
+    if (!BUILD_STORAGE_NAMESPACE || !/^[a-z0-9-]{1,32}$/.test(BUILD_STORAGE_NAMESPACE)) {
+      throw new Error('Isolated non-production storage context is unavailable');
+    }
+    return BUILD_STORAGE_NAMESPACE;
+  }
+  if (BUILD_DEPLOY_CONTEXT !== 'dev') throw new Error('Unknown portfolio deploy context');
+  // Only local development may opt in to a custom namespace.
+  const namespace = process.env.PORTFOLIO_STORAGE_NAMESPACE?.trim() || null;
+  if (namespace && !/^[a-z0-9-]{1,32}$/.test(namespace)) {
+    throw new Error('Invalid local portfolio storage namespace');
+  }
+  return namespace;
+}
+
+/**
  * Open a store using the current invocation context.
  * Do not retain a cached/rejected promise across Lambda invocations.
  * Keep the site-wide store name unchanged to preserve existing content.
@@ -54,7 +77,8 @@ async function getNetlifyBlobStore() {
 
   try {
     const { getStore } = await import('@netlify/blobs');
-    return getStore('portfolio-content');
+    const namespace = getPortfolioStorageNamespace();
+    return getStore(namespace ? `portfolio-content-${namespace}` : 'portfolio-content');
   } catch (err: any) {
     if (isProductionEnvironment()) {
       throw new Error(`Failed to initialize Netlify Blobs in production: ${err?.message}`);
@@ -194,10 +218,16 @@ export const portfolioStorage = {
         if (!store) {
           throw new Error('Netlify Blobs store is uninitialized in production.');
         }
-        const raw = await store.get('published', { type: 'json' });
+        let raw = await store.get('published', { type: 'json' });
+        // An uninitialized preview shows live content without writing to the
+        // production store. All preview edits still use its own namespace.
+        if (!raw && getPortfolioStorageNamespace()) {
+          const { getStore } = await import('@netlify/blobs');
+          raw = await getStore('portfolio-content').get('published', { type: 'json' });
+        }
         if (raw) {
           const sanitized = sanitizeSiteContent(raw);
-          if (raw.contact?.emailValue === LEGACY_EMAIL || raw.profileInfo?.email === LEGACY_EMAIL) {
+          if (!getPortfolioStorageNamespace() && (raw.contact?.emailValue === LEGACY_EMAIL || raw.profileInfo?.email === LEGACY_EMAIL)) {
             store.setJSON('published', sanitized).catch((err: any) => {
               console.warn('Auto-migrated legacy email in Netlify Blobs published store:', err?.message);
             });

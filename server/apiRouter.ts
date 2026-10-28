@@ -9,6 +9,7 @@ import {
   isProductionEnvironment,
 } from './auth';
 import { portfolioStorage } from './storage';
+import { MAX_MEDIA_BYTES, savePortfolioMedia, getPortfolioMedia } from './mediaStorage';
 
 export const apiRouter = Router();
 
@@ -123,6 +124,85 @@ function getOptionalSession(req: Request): SessionPayload | null {
 // Apply CSRF verification to all mutating routes
 apiRouter.use(verifyCsrfProtection);
 
+
+/**
+ * Issue a short-lived Cloudinary signed direct-upload request.
+ * Only a verified administrator with a valid CSRF token can request this.
+ * Never expose CLOUDINARY_API_SECRET or permit client-defined signing options.
+ */
+apiRouter.post('/media/cloudinary/sign', requireAdminAuth, (req: AuthenticatedRequest, res: Response) => {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME?.trim();
+  const apiKey = process.env.CLOUDINARY_API_KEY?.trim();
+  const apiSecret = process.env.CLOUDINARY_API_SECRET?.trim();
+
+  if (!cloudName || !apiKey || !apiSecret) {
+    return res.status(503).json({
+      error: 'Cloudinary is not configured in this Netlify deploy context.',
+      code: 'CLOUDINARY_NOT_CONFIGURED',
+    });
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(cloudName)) {
+    return res.status(503).json({ error: 'Invalid Cloudinary cloud name configuration.' });
+  }
+
+  // Signed options are server-generated and cannot be chosen by visitors.
+  const timestamp = Math.floor(Date.now() / 1000);
+  const folder = 'dahoon-portfolio';
+  const publicId = crypto.randomUUID();
+  // Cloudinary SHA-1 signatures sort all signed parameters alphabetically,
+  // then append the API secret before hashing (not HMAC).
+  const signedParams = `folder=${folder}&public_id=${publicId}&timestamp=${timestamp}`;
+  const signature = crypto.createHash('sha1').update(signedParams + apiSecret).digest('hex');
+
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({
+    cloudName,
+    apiKey,
+    timestamp,
+    folder,
+    publicId,
+    signature,
+  });
+});
+
+// Media files are stored separately from published/draft JSON.
+// All new writes require the existing verified administrator session + CSRF.
+apiRouter.post('/media', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const bytes = req.body;
+  if (!Buffer.isBuffer(bytes)) {
+    return res.status(415).json({ error: 'Upload a JPEG, PNG, WebP, GIF, MP4, or WebM file with its correct Content-Type.' });
+  }
+  if (!bytes.length || bytes.length > MAX_MEDIA_BYTES) {
+    return res.status(413).json({ error: 'Media exceeds the 3 MB upload limit. Compress the image or use a smaller video.' });
+  }
+  try {
+    const url = await savePortfolioMedia(bytes, String(req.headers['content-type'] || ''));
+    return res.status(201).json({ success: true, url });
+  } catch (error: any) {
+    if (/Unsupported media format|File contents do not match|Media file size/.test(error?.message || '')) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error('Media upload failed:', error);
+    return res.status(503).json({ error: 'Could not save uploaded media. No content has been changed.' });
+  }
+});
+
+// Public read-only access for media referenced from published content.
+// Random opaque keys are immutable; uploads may also exist in an unpublished draft.
+apiRouter.get('/media/:id', async (req: Request, res: Response) => {
+  try {
+    const item = await getPortfolioMedia(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Media not found' });
+    res.setHeader('Content-Type', item.mime);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    return res.status(200).send(item.bytes);
+  } catch (error) {
+    console.error('Media read failed:', error);
+    return res.status(503).json({ error: 'Media temporarily unavailable' });
+  }
+});
+
 // -------------------------------------------------------------
 // Authentication Endpoints
 // -------------------------------------------------------------
@@ -168,12 +248,24 @@ apiRouter.post('/auth/google', async (req: Request, res: Response) => {
     });
   }
 
-  // Create signed session token
-  const token = createSignedSessionToken({
-    email: verification.email,
-    name: verification.name || 'HAN DAHOON',
-    picture: verification.picture,
-  });
+  // Create signed session token. Missing or invalid SESSION_SECRET must
+  // produce an actionable server error rather than an unhandled Lambda 502.
+  let token: string;
+  try {
+    token = createSignedSessionToken({
+      email: verification.email,
+      name: verification.name || 'HAN DAHOON',
+      picture: verification.picture,
+    });
+  } catch (err: unknown) {
+    // Never log session tokens, OAuth credentials, or the secret itself.
+    console.error('Admin session setup failed:', err instanceof Error ? err.message : 'Unknown session error');
+    return res.status(503).json({
+      error: 'Administrator session configuration unavailable.',
+      code: 'SESSION_CONFIGURATION_ERROR',
+      details: 'Verify SESSION_SECRET in the current Netlify deploy context and redeploy.',
+    });
+  }
 
   // Set secure HttpOnly cookie
   res.cookie(SESSION_COOKIE_NAME, token, getSessionCookieOptions());
@@ -241,6 +333,9 @@ apiRouter.post('/auth/logout', (req: Request, res: Response) => {
  * Public endpoint: reads the live published content.
  */
 apiRouter.get('/content/published', async (req: Request, res: Response) => {
+  // Published edits must be visible immediately after an admin publishes.
+  // Prevent stale HTTP/browser caches from showing the previous hero.
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
   try {
     const published = await portfolioStorage.getPublishedContent();
     return res.json({ published });

@@ -1,3 +1,4 @@
+import { uploadPortfolioMedia } from '../utils/mediaUpload';
 import React, { useState } from 'react';
 import {
   Language,
@@ -62,24 +63,19 @@ export const FoodSection: React.FC<FoodSectionProps> = ({
   const [dishToEdit, setDishToEdit] = useState<FoodPhoto | null>(null);
   const [isOverviewModalOpen, setIsOverviewModalOpen] = useState(false);
 
-  const handleFileUpload = (
+  const handleFileUpload = async (
     id: string,
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const isVideo = file.type.startsWith('video/');
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          onUploadFoodPhoto(
-            id,
-            event.target.result as string,
-            isVideo ? 'video' : 'image'
-          );
-        }
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+    try {
+      const media = await uploadPortfolioMedia(file, currentLang);
+      onUploadFoodPhoto(id, media.url, media.mediaType);
+    } catch (error: any) {
+      alert(error.message || 'Media upload failed');
+    } finally {
+      e.target.value = '';
     }
   };
 

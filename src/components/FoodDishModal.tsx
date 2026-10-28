@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FoodPhoto, Language, isVideoMedia } from '../types';
 import { translations } from '../i18n/translations';
 import { X, Upload, Check, Trash2, AlertCircle, Play } from 'lucide-react';
-import { processAndCompressMedia, validateMediaFile } from '../utils/imageUtils';
+import { uploadPortfolioMedia } from '../utils/mediaUpload';
 
 interface FoodDishModalProps {
   currentLang: Language;
@@ -141,21 +141,16 @@ export const FoodDishModal: React.FC<FoodDishModalProps> = ({
     if (!file) return;
 
     setMediaError(null);
-    const validation = validateMediaFile(file, currentLang);
-    if (!validation.valid) {
-      setMediaError(validation.error || 'Invalid file');
-      return;
-    }
-
     setIsProcessingMedia(true);
     try {
-      const processed = await processAndCompressMedia(file, currentLang);
-      setImageUrl(processed.dataUrl);
-      setMediaType(processed.mediaType);
+      const media = await uploadPortfolioMedia(file, currentLang);
+      setImageUrl(media.url);
+      setMediaType(media.mediaType);
     } catch (err: any) {
-      setMediaError(err.message || 'Failed to process media');
+      setMediaError(err.message || 'Media upload failed');
     } finally {
       setIsProcessingMedia(false);
+      e.target.value = '';
     }
   };
 

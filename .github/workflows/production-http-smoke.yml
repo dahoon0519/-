@@ -1,0 +1,32 @@
+name: Production deployment smoke (read-only)
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  production-http:
+    # This checksum is specifically for the PR #3 release.
+    # Future legitimate content edits must not be blocked by a stale baseline.
+    if: startsWith(github.event.head_commit.message, 'Release portfolio PR #3:')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact merged commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify production deployment, content and visitor permissions
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: node scripts/test-production-deploy.mjs

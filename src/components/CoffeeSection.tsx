@@ -1,3 +1,4 @@
+import { uploadPortfolioMedia } from '../utils/mediaUpload';
 import React, { useState } from 'react';
 import { Language, CafeVisit, isVideoMedia, CoffeeSectionContent, LatteArtPhoto } from '../types';
 import { Plus, Coffee, MapPin, Upload, Edit3, Trash2, ArrowUp, ArrowDown, Eye, Calendar, Tag } from 'lucide-react';
@@ -46,16 +47,16 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
   const [visitToEdit, setVisitToEdit] = useState<CafeVisit | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          onUploadHandDripPhoto(event.target.result as string);
-        }
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+    try {
+      const media = await uploadPortfolioMedia(file, currentLang);
+      onUploadHandDripPhoto(media.url);
+    } catch (error: any) {
+      alert(error.message || 'Media upload failed');
+    } finally {
+      e.target.value = '';
     }
   };
 

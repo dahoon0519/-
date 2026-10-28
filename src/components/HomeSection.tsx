@@ -1,4 +1,5 @@
-import React, { useRef } from 'react';
+import { uploadPortfolioMedia } from '../utils/mediaUpload';
+import React, { useRef, useState } from 'react';
 import { Language, HeroPhotoInfo, LatteArtPhoto, isVideoMedia, SiteContent } from '../types';
 import { translations } from '../i18n/translations';
 import { ChevronDown, Eye, Camera, Edit2, Play, Video as VideoIcon } from 'lucide-react';
@@ -9,7 +10,7 @@ interface HomeSectionProps {
   heroPhoto: HeroPhotoInfo;
   onOpenPhoto: (photo: LatteArtPhoto) => void;
   isAdmin: boolean;
-  onChangeHeroPhoto: (fileUrl: string, mediaType?: 'image' | 'video') => void;
+  onChangeHeroPhoto: (fileUrl: string, mediaType?: 'image' | 'video') => Promise<void> | void;
   onOpenAdmin: () => void;
   siteHero?: SiteContent['hero'];
   isEditMode?: boolean;
@@ -29,6 +30,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
 }) => {
   const t = translations[currentLang];
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isHeroUploading, setIsHeroUploading] = useState(false);
 
   const heroName = siteHero?.name || t.hero.name;
   const heroTitle = siteHero?.title[currentLang] || t.hero.title;
@@ -42,20 +44,23 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
     }
   };
 
-  const handleHeroFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleHeroFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const isVideo = file.type.startsWith('video/');
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          onChangeHeroPhoto(
-            event.target.result as string,
-            isVideo ? 'video' : 'image'
-          );
-        }
-      };
-      reader.readAsDataURL(file);
+    if (!file || isHeroUploading) return;
+    setIsHeroUploading(true);
+    try {
+      const media = await uploadPortfolioMedia(file, currentLang);
+      await onChangeHeroPhoto(media.url, media.mediaType);
+      alert(currentLang === 'ja'
+        ? '代表メディアを下書き保存しました。訪問者に表示するには管理画面から公開してください。'
+        : currentLang === 'ko'
+        ? '대표 사진·영상이 임시저장됐어요. 방문자에게 보이려면 관리자 화면에서 게시하세요.'
+        : 'Representative media saved as a draft. Publish in admin settings to make it public.');
+    } catch (error: any) {
+      alert(error.message || 'Media upload failed');
+    } finally {
+      setIsHeroUploading(false);
+      e.target.value = '';
     }
   };
 
@@ -134,11 +139,13 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
           >
             {isVideoMedia(heroPhoto.imageUrl, heroPhoto.mediaType) ? (
               <video
+                key={heroPhoto.imageUrl}
                 src={heroPhoto.imageUrl}
                 autoPlay
                 loop
                 muted
                 playsInline
+                preload="metadata"
                 className="w-full h-full object-cover"
               />
             ) : (
@@ -184,17 +191,24 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
                 <label className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FAF8F5]/95 hover:bg-white text-[#3D352E] hover:text-[#1A1816] rounded-md shadow-sm text-xs font-medium cursor-pointer border border-[#DDD6CA] transition-all">
                   <Camera className="w-3.5 h-3.5 text-[#735A46]" />
                   <span>
-                    {currentLang === 'ja'
-                      ? '代表メディア変更'
-                      : currentLang === 'ko'
-                      ? '대표 사진·영상 변경'
-                      : 'Change Media'}
+                    {isHeroUploading
+                      ? currentLang === 'ja'
+                        ? 'アップロード中...'
+                        : currentLang === 'ko'
+                        ? '업로드 중...'
+                        : 'Uploading...'
+                      : currentLang === 'ja'
+                        ? '代表メディア変更'
+                        : currentLang === 'ko'
+                        ? '대표 사진·영상 변경'
+                        : 'Change Media'}
                   </span>
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*,video/*"
+                    accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm"
                     onChange={handleHeroFileChange}
+                    disabled={isHeroUploading}
                     className="hidden"
                   />
                 </label>

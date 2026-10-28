@@ -1,3 +1,4 @@
+import { uploadPortfolioMedia } from '../utils/mediaUpload';
 import React, { useState } from 'react';
 import { LatteArtPhoto, Language, isVideoMedia } from '../types';
 import { translations } from '../i18n/translations';
@@ -32,39 +33,38 @@ export const PhotoManagerModal: React.FC<PhotoManagerModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleFileUpload = (
+  const handleFileUpload = async (
     index: number,
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const isVideo = file.type.startsWith('video/');
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          const updated = [...photos];
-          updated[index] = {
-            ...updated[index],
-            imageUrl: event.target.result as string,
-            mediaType: isVideo ? 'video' : 'image',
-          };
-          onUpdatePhotos(updated);
-        }
+    if (!file) return;
+    try {
+      const media = await uploadPortfolioMedia(file, currentLang);
+      const updated = [...photos];
+      updated[index] = {
+        ...updated[index],
+        imageUrl: media.url,
+        mediaType: media.mediaType,
       };
-      reader.readAsDataURL(file);
+      onUpdatePhotos(updated);
+    } catch (error: any) {
+      alert(error.message || 'Media upload failed');
+    } finally {
+      e.target.value = '';
     }
   };
 
-  const handleNewFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleNewFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setNewImage(event.target.result as string);
-        }
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+    try {
+      const media = await uploadPortfolioMedia(file, currentLang);
+      setNewImage(media.url);
+    } catch (error: any) {
+      alert(error.message || 'Media upload failed');
+    } finally {
+      e.target.value = '';
     }
   };
 
