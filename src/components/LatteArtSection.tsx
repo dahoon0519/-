@@ -154,15 +154,17 @@ export const LatteArtSection: React.FC<LatteArtSectionProps> = ({
             multiline
             className="text-sm sm:text-[15px] text-[#4E483F] leading-relaxed max-w-3xl block"
           />
-          <div className="mt-4">
-            <EditableText
-              isEditMode={isEditMode}
-              value={note}
-              onChange={(val) => onUpdateLatteArtField?.('note', val)}
-              as="p"
-              className="text-xs text-[#8A847A] italic block"
-            />
-          </div>
+          {(note?.trim() || isEditMode) && (
+            <div className="mt-4">
+              <EditableText
+                isEditMode={isEditMode}
+                value={note}
+                onChange={(val) => onUpdateLatteArtField?.('note', val)}
+                as="p"
+                className="text-xs text-[#8A847A] italic block"
+              />
+            </div>
+          )}
         </div>
 
         {/* 5-Photo Gallery Grid */}
