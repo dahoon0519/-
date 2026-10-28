@@ -83,6 +83,18 @@ export const SiteContentManager: React.FC<SiteContentManagerProps> = ({
   const hasDraft = Boolean(draftContent);
   const isDirty = JSON.stringify(content) !== JSON.stringify(draftContent || siteContent);
 
+  // Protect edits that exist only in this browser tab. Persisted Draft remains
+  // recoverable after reload; unsaved form changes do not.
+  useEffect(() => {
+    if (!isDirty) return;
+    const confirmLeave = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', confirmLeave);
+    return () => window.removeEventListener('beforeunload', confirmLeave);
+  }, [isDirty]);
+
   const t = (ja: string, ko: string, en: string) =>
     currentLang === 'ja' ? ja : currentLang === 'ko' ? ko : en;
 
@@ -287,6 +299,19 @@ export const SiteContentManager: React.FC<SiteContentManagerProps> = ({
   return (
     <div className="space-y-5">
       {/* Top Workflow Status & Action Bar */}
+      <div role="note" className="rounded-lg border border-[#DAD2C6] bg-white px-4 py-3 text-[11px] text-[#53483C]">
+        <p className="font-semibold mb-1">
+          {t('編集 → 下書き保存 → プレビュー → 公開',
+            '편집 → 임시저장 → 미리보기 → 게시',
+            'Edit → Save Draft → Preview → Publish')}
+        </p>
+        <p>
+          {t('下書き保存では訪問者の画面は変わりません。公開は別の確認操作です。公開前のサーバー復元ポイントは自動作成されます。',
+            '임시저장만으로 방문자 화면은 바뀌지 않습니다. 게시 전에는 별도 확인이 필요하며 서버 안전 복원 지점이 자동 생성됩니다.',
+            'Saving Draft does not change the visitor site. Publishing is a separate confirmed action and creates a server recovery point first.')}
+        </p>
+      </div>
+
       <div className="bg-[#F4EFE6] border border-[#DDD5C7] rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
         {/* Left: Status & Indicators */}
         <div className="space-y-1">

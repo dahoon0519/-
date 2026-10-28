@@ -35,6 +35,9 @@ jobs:
           npm install --no-save --no-package-lock --ignore-scripts playwright
           npx playwright install --with-deps chromium
 
+      - name: TypeScript source and server API type check
+        run: npm run lint
+
       - name: Test authenticated Draft, Publish, refresh and Restore locally
         run: npx tsx scripts/test-admin-workflow.ts
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { uploadPortfolioMedia } from '../utils/mediaUpload';
+import { apiClient } from '../services/apiClient';
 import {
   Language,
   LatteArtPhoto,
@@ -42,19 +43,13 @@ import {
 import { CategoriesManager } from './CategoriesManager';
 import { SiteContentManager } from './SiteContentManager';
 import { InquiriesManager } from './InquiriesManager';
+import { AdminRecoveryPanel } from './AdminRecoveryPanel';
 import { ContactEmailSettingsManager } from './ContactEmailSettingsManager';
 import {
   authService,
   ALLOWED_ADMIN_EMAIL,
   AdminUser,
 } from '../services/authService';
-import {
-  restoreCoffeeFromBackup,
-  createCoffeeBackupSnapshot,
-  COFFEE_BACKUP_KEY,
-  PRE_RESTORE_LATEST_KEY,
-  RestoreResult,
-} from '../services/siteContentService';
 
 interface AdminModalProps {
   currentLang: Language;
@@ -238,8 +233,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   >('categories');
   const [notification, setNotification] = useState<string | null>(null);
   const [isHeroUploading, setIsHeroUploading] = useState(false);
-  const [isRestoringSnapshot, setIsRestoringSnapshot] = useState(false);
-  const [snapshotResult, setSnapshotResult] = useState<string | null>(null);
+  const [checkingCloudinary, setCheckingCloudinary] = useState(false);
+  const [cloudinaryResult, setCloudinaryResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const t = (ja: string, ko: string, en: string) =>
     currentLang === 'ja' ? ja : currentLang === 'ko' ? ko : en;
@@ -293,6 +288,30 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   };
 
   if (!isOpen) return null;
+
+  // This verifies the *deployed* admin-only signing endpoint without uploading
+  // or changing any media. A real file upload is still needed for end-to-end proof.
+  const checkCloudinaryConnection = async () => {
+    setCheckingCloudinary(true);
+    setCloudinaryResult(null);
+    try {
+      const signed = await apiClient.post<{
+        cloudName: string; apiKey: string; folder: string;
+        signature: string; publicId: string; timestamp: number;
+      }>('/api/media/cloudinary/sign', {});
+      if (!signed.signature || !signed.apiKey || signed.folder !== 'dahoon-portfolio') {
+        throw new Error('Invalid signed upload configuration');
+      }
+      setCloudinaryResult({ ok: true, message: t(
+        'サーバー署名を確認しました（実ファイルの転送は未実施）。',
+        '서버 업로드 서명을 확인했습니다. 실제 파일 업로드는 아직 별도 확인이 필요합니다.',
+        'Server signing is ready. Actual file upload is not yet tested.') });
+    } catch (err: any) {
+      setCloudinaryResult({ ok: false, message: err?.message || 'Upload signing is unavailable' });
+    } finally {
+      setCheckingCloudinary(false);
+    }
+  };
 
   // Hero media uses the same signed Cloudinary direct-upload flow as
   // latte-art, coffee and food media. Never embed a video as a Base64 data URL.
@@ -546,143 +565,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     }
   };
 
-  // Export / Backup
-  const handleExportData = () => {
-    const data = {
-      version: 2,
-      scope: 'local_storage_only',
-      exportedAt: new Date().toISOString(),
-      heroPhoto,
-      profileInfo,
-      lattePhotos,
-      cafeVisits,
-      foodPhotos,
-      handDripPhotoUrl,
-      coffeeContent,
-      foodOverview,
-      siteContent,
-      firestoreStatus: {
-        backedUp: false,
-        reason:
-          'Local client storage backup only. Remote Firestore documents are maintained separately in Google Cloud.',
-      },
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `dahoon_portfolio_backup_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const content = event.target?.result;
-          if (typeof content !== 'string') return;
-          const parsed = JSON.parse(content);
-
-          if (!parsed || typeof parsed !== 'object') {
-            alert(
-              t(
-                'バックアップファイルの形式が不正です。',
-                '올바르지 않은 백업 파일 형식입니다.',
-                'Malformed backup file format.'
-              )
-            );
-            return;
-          }
-
-          // Check if current edits are newer
-          const lastPublishTime = localStorage.getItem('dahoon_last_publish_time');
-          const lastDraftTime = localStorage.getItem('dahoon_last_draft_time');
-          const currentEdit = Math.max(
-            lastPublishTime ? new Date(lastPublishTime).getTime() : 0,
-            lastDraftTime ? new Date(lastDraftTime).getTime() : 0
-          );
-          const importTime = parsed.exportedAt ? new Date(parsed.exportedAt).getTime() : 0;
-
-          if (currentEdit > importTime && importTime > 0) {
-            const proceed = confirm(
-              t(
-                '現在の保存データは読み込むバックアップよりも新しい編集が含まれています。上書きして復元しますか？（現在の状態は安全のため自動バックアップされます）',
-                '현재 저장된 데이터가 불러오려는 백업본보다 최신입니다. 덮어쓰고 복원하시겠습니까? (현재 상태는 안전을 위해 자동 사전 백업됩니다)',
-                'Current data has newer modifications than this backup file. Overwrite? (A safety backup of the current state will be created first)'
-              )
-            );
-            if (!proceed) return;
-          }
-
-          // 1. Create safety backup of current state BEFORE overwriting
-          createCoffeeBackupSnapshot(true, 'Pre-import safety snapshot created before file restore');
-
-          // 2. Safely apply imported data
-          if (parsed.heroPhoto) onUpdateHeroPhoto(parsed.heroPhoto);
-          if (parsed.lattePhotos) onUpdateLattePhotos(parsed.lattePhotos);
-          if (parsed.cafeVisits) onUpdateCafeVisits(parsed.cafeVisits);
-          if (parsed.foodPhotos) onUpdateFoodPhotos(parsed.foodPhotos);
-          if (parsed.profileInfo) onUpdateProfileInfo(parsed.profileInfo);
-          if (parsed.handDripPhotoUrl !== undefined)
-            onUpdateHandDripPhoto(parsed.handDripPhotoUrl);
-          if (parsed.coffeeContent) onUpdateCoffeeContent(parsed.coffeeContent);
-          if (parsed.foodOverview) onUpdateFoodOverview(parsed.foodOverview);
-          if (parsed.siteContent) onUpdateSiteContent(parsed.siteContent);
-
-          showNotify(
-            t(
-              'データを正常に復元しました（復元前の状態も安全に保存されました）',
-              '데이터를 성공적으로 불러왔습니다 (이전 상태는 안전 백업본에 보관되었습니다)',
-              'Data restored successfully (pre-recovery safety backup saved)'
-            )
-          );
-        } catch (err: any) {
-          alert(
-            t(
-              `バックアップJSONの読み込みに失敗しました: ${err.message || '構文エラー'}`,
-              `백업 JSON 파일 읽기 실패: ${err.message || '문법 오류'}`,
-              `Failed to parse backup JSON: ${err.message || 'Invalid JSON syntax'}`
-            )
-          );
-        }
-      };
-      reader.readAsText(file);
-      e.target.value = '';
-    }
-  };
-
-  const handleRestoreFromSafetySnapshot = (force: boolean = false) => {
-    const confirmMsg = t(
-      'ローカル安全スナップショットから復元しますか？（現在の状態は自動的に事前バックアップされます）',
-      '로컬 안전 스냅샷으로부터 복원하시겠습니까? (현재 상태는 자동 사전 백업됩니다)',
-      'Restore from local safety snapshot? (Current state will be automatically backed up first)'
-    );
-    if (!confirm(confirmMsg)) return;
-
-    setIsRestoringSnapshot(true);
-    try {
-      const res = restoreCoffeeFromBackup({ force, lang: currentLang });
-      if (res.success) {
-        if (res.restoredContent) {
-          onUpdateSiteContent(res.restoredContent);
-        }
-        showNotify(res.message);
-        setSnapshotResult(res.message);
-      } else {
-        alert(res.message);
-        setSnapshotResult(res.message);
-      }
-    } catch (e: any) {
-      alert(`Restore error: ${e.message}`);
-    } finally {
-      setIsRestoringSnapshot(false);
-    }
-  };
 
   return (
     <div className="fixed inset-0 z-50 bg-[#161413]/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
@@ -1091,6 +973,29 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         'The primary media displayed on the hero banner. You can upload an image or video.'
                       )}
                     </p>
+                  </div>
+
+                  <div className="rounded-lg border border-[#E0D8CC] bg-[#F8F5EF] p-3 space-y-2">
+                    <div className="font-medium text-xs text-[#3B3028]">
+                      {t('Cloudinary 接続診断', 'Cloudinary 연결 진단', 'Cloudinary connection check')}
+                    </div>
+                    <p className="text-[11px] text-[#766B60]">
+                      {t('管理者セッションで署名APIを検査します。写真や動画はアップロードしません。',
+                        '관리자 로그인 상태로 업로드 서명 API만 점검합니다. 사진·영상 파일은 업로드하지 않습니다.',
+                        'Checks the authenticated upload-signing API without uploading a file.')}
+                    </p>
+                    <button type="button" disabled={checkingCloudinary || isHeroUploading}
+                      onClick={checkCloudinaryConnection}
+                      className="rounded border border-[#CABDAE] bg-white px-3 py-1.5 text-xs disabled:opacity-50">
+                      {checkingCloudinary ? t('確認中...', '확인 중...', 'Checking...') :
+                        t('署名APIを検査', '업로드 연결 확인', 'Check upload connection')}
+                    </button>
+                    {cloudinaryResult && <p role="status" className={
+                      'text-[11px] p-2 rounded border ' + (cloudinaryResult.ok
+                        ? 'text-emerald-800 bg-emerald-50 border-emerald-200'
+                        : 'text-red-800 bg-red-50 border-red-200')}>
+                      {cloudinaryResult.message}
+                    </p>}
                   </div>
 
                   <div className="bg-white border border-[#E0D8CC] rounded-lg p-4 space-y-4">
@@ -2425,185 +2330,9 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 </div>
               )}
 
-              {/* TAB: BACKUP & RECOVERY */}
-              {activeTab === 'backup' && (
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="font-serif-jp text-sm font-medium text-[#222] mb-1">
-                      {t(
-                        'データのバックアップ & 安全復元・初期化',
-                        '데이터 백업 & 안전 복원·초기화',
-                        'Data Backup & Safe Recovery'
-                      )}
-                    </h4>
-                    <p className="text-[11px] text-[#7A7369]">
-                      {t(
-                        'すべての登録写真やテキストの安全スナップショット管理、ファイルダウンロード・復元を行えます。',
-                        '모든 등록 사진과 텍스트의 안전 스냅샷 관리, 백업 파일 다운로드 및 복원을 수행할 수 있습니다.',
-                        'Manage safe local snapshots, export/import JSON backups, and restore portfolio state.'
-                      )}
-                    </p>
-                  </div>
+              {/* Server-backed content recovery: never overwrite live content on import. */}
+              {activeTab === 'backup' && <AdminRecoveryPanel currentLang={currentLang} />}
 
-                  {/* Explicit Recovery Scope & Limitations Banner */}
-                  <div className="bg-[#FAF3EB] border border-[#E2D5C5] rounded-lg p-3.5 space-y-1.5 text-xs text-[#634832]">
-                    <div className="flex items-center gap-1.5 font-medium">
-                      <ShieldCheck className="w-4 h-4 text-[#8C6239] shrink-0" />
-                      <span>
-                        {t(
-                          '復元スコープの明確な定義 (Recovery Scope)',
-                          '복원 적용 범위 명시 (Recovery Scope)',
-                          'Explicit Recovery Scope Specification'
-                        )}
-                      </span>
-                    </div>
-                    <ul className="list-disc pl-5 space-y-0.5 text-[11px] text-[#785C42]">
-                      <li>
-                        <strong>{t('ローカルストレージ安全スナップショット:', '로컬 브라우저 안전 스냅샷:', 'Local Browser Snapshot:')}</strong>{' '}
-                        {t(
-                          'ブラウザ内に保存された公開データ、下書き、旧形式のコーヒーキャッシュを安全に復元します。',
-                          '브라우저에 보관된 게시 데이터, 임시저장(Draft), 레거시 커피 캐시를 안전하게 복원합니다.',
-                          'Safely restores browser-stored published content, drafts, and legacy coffee data.'
-                        )}
-                      </li>
-                      <li>
-                        <strong>{t('クラウド Firestore の状態:', '클라우드 Firestore 상태:', 'Cloud Firestore Status:')}</strong>{' '}
-                        {t(
-                          'リモート Firestore のドキュメントは Google Cloud 上に個別に保管されており、クライアント側のローカルスナップショットには含まれません。復元処理はローカルデータを対象とします。',
-                          '원격 Firestore 문서는 Google Cloud 상에 별도로 안전하게 보관되며 클라이언트 로컬 스냅샷에 중복 백업되지 않습니다. 복원 시에도 로컬 데이터를 안전하게 처리합니다.',
-                          'Remote Firestore documents are stored separately on Google Cloud Firestore and are not bundled into local client snapshots. Recovery targets local client storage.'
-                        )}
-                      </li>
-                    </ul>
-                  </div>
-
-                  {/* Safety Snapshots Card */}
-                  <div className="bg-white border border-[#E0D8CC] rounded-lg p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="font-medium text-[#2E2822] block text-xs">
-                          {t('ローカル安全スナップショット', '로컬 자동 안전 스냅샷', 'Local Safety Snapshot')}
-                        </span>
-                        <span className="text-[11px] text-[#7D766C]">
-                          {localStorage.getItem(COFFEE_BACKUP_KEY)
-                            ? t(
-                                `作成日時: ${new Date(JSON.parse(localStorage.getItem(COFFEE_BACKUP_KEY) || '{}').createdAt || Date.now()).toLocaleString()}`,
-                                `생성 시각: ${new Date(JSON.parse(localStorage.getItem(COFFEE_BACKUP_KEY) || '{}').createdAt || Date.now()).toLocaleString()}`,
-                                `Created: ${new Date(JSON.parse(localStorage.getItem(COFFEE_BACKUP_KEY) || '{}').createdAt || Date.now()).toLocaleString()}`
-                              )
-                            : t('保存されたスナップショットはありません', '저장된 스냅샷이 없습니다', 'No snapshot saved')}
-                        </span>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          disabled={isRestoringSnapshot || !localStorage.getItem(COFFEE_BACKUP_KEY)}
-                          onClick={() => handleRestoreFromSafetySnapshot(false)}
-                          className="px-3 py-1.5 bg-[#4A3B2E] hover:bg-[#3D2F23] disabled:opacity-50 text-white rounded cursor-pointer font-medium text-xs flex items-center gap-1.5"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          <span>{t('スナップショットから復元', '스냅샷에서 복원', 'Restore Snapshot')}</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Snapshot result message if available */}
-                    {snapshotResult && (
-                      <div className="p-2.5 rounded bg-[#F8F5EE] border border-[#E0D8CC] text-[11px] text-[#4A3B2E]">
-                        {snapshotResult}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="bg-white border border-[#E0D8CC] rounded-lg p-5 space-y-4">
-                    {/* Export */}
-                    <div className="flex items-center justify-between pb-3 border-b border-[#EAE3D6]">
-                      <div>
-                        <span className="font-medium text-[#2E2822] block text-xs">
-                          {t(
-                            'バックアップをダウンロード',
-                            '전체 데이터 백업 다운로드',
-                            'Export Portfolio Backup JSON'
-                          )}
-                        </span>
-                        <span className="text-[11px] text-[#7D766C]">
-                          {t(
-                            'すべての登録データ（写真・文章・記録）をJSONファイルとして保存します。',
-                            '수정한 사진, 텍스트, 요리, 카페 기록 전체를 파일로 저장합니다.',
-                            'Downloads all registered media, dishes, coffee notes, and site content as a JSON file.'
-                          )}
-                        </span>
-                      </div>
-                      <button
-                        onClick={handleExportData}
-                        className="px-3.5 py-1.5 bg-[#4A3B2E] hover:bg-[#3D2F23] text-white rounded cursor-pointer font-medium flex items-center gap-1.5 shrink-0"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>{t('ダウンロード', '백업 받기', 'Download JSON')}</span>
-                      </button>
-                    </div>
-
-                    {/* Import */}
-                    <div className="flex items-center justify-between pb-3 border-b border-[#EAE3D6]">
-                      <div>
-                        <span className="font-medium text-[#2E2822] block text-xs">
-                          {t(
-                            'バックアップから復元',
-                            '백업 파일에서 불러오기 (복원)',
-                            'Restore from JSON Backup'
-                          )}
-                        </span>
-                        <span className="text-[11px] text-[#7D766C]">
-                          {t(
-                            '以前保存したJSONファイルを読み込みます（現在の状態は安全のため自動的に事前バックアップされます）。',
-                            '이전에 저장해 둔 JSON 백업 파일을 선택하여 복원합니다 (현재 상태는 안전을 위해 자동 사전 백업됩니다).',
-                            'Restores data from a JSON file (a pre-recovery safety backup of current data will be created first).'
-                          )}
-                        </span>
-                      </div>
-                      <label className="px-3.5 py-1.5 border border-[#DDD5C9] bg-[#FAF8F5] hover:bg-white text-[#2C2926] rounded cursor-pointer font-medium flex items-center gap-1.5 shrink-0">
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>{t('ファイル選択', '파일 선택', 'Choose File')}</span>
-                        <input
-                          type="file"
-                          accept=".json,application/json"
-                          onChange={handleImportData}
-                          className="hidden"
-                        />
-                      </label>
-                    </div>
-
-                    {/* Reset All */}
-                    <div className="flex items-center justify-between pt-1">
-                      <div>
-                        <span className="font-medium text-red-700 block text-xs">
-                          {t(
-                            'すべてのデータを初期状態に戻す',
-                            '모든 데이터를 최초 기본값으로 초기화',
-                            'Reset All Data to Initial Defaults'
-                          )}
-                        </span>
-                        <span className="text-[11px] text-[#8C8477]">
-                          {t(
-                            'ローカル保存データを初期ポートフォリオ状態に戻します（現在の状態は自動的に安全スナップショットに保管されます）。',
-                            '추가 또는 수정한 모든 데이터를 지우고 처음 상태로 되돌립니다 (현재 상태는 자동 안전 스냅샷에 보관됩니다).',
-                            'Resets all custom portfolio entries to defaults (current state is preserved in a pre-reset safety snapshot).'
-                          )}
-                        </span>
-                      </div>
-                      <button
-                        onClick={onResetAllData}
-                        className="px-3.5 py-1.5 border border-red-300 text-red-700 hover:bg-red-50 rounded cursor-pointer font-medium flex items-center gap-1.5 shrink-0"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        <span>{t('初期化', '초기화', 'Reset All')}</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB: ADMIN EMAIL SETTINGS (Dual Method A & B) */}
               {activeTab === 'adminEmail' && (
                 <div className="space-y-6">
                   {/* Section Title & Overview */}
@@ -2739,16 +2468,16 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     <div className="text-[11px] text-[#63594C] space-y-2 leading-relaxed">
                       <p>
                         {t(
-                          '本ポートフォリオは Vite ベースの React クライアント SPA として稼働しており、コンテンツや下書き・バージョン履歴はブラウザの localStorage / sessionStorage に保管されています。',
-                          '본 포트폴리오는 Vite 기반 React 클라이언트 SPA로 동작하며, 콘텐츠 및 임시저장·버전 이력은 브라우저의 localStorage / sessionStorage에 안전하게 보관됩니다.',
-                          'This portfolio runs as a client-side React SPA with Vite, storing content, drafts, and version snapshots in browser localStorage/sessionStorage.'
+                          '公開内容・下書き・履歴はサーバー側の Netlify Blobs に保存されます。ブラウザ保存は補助キャッシュで、バックアップとは異なります。',
+                          '게시 콘텐츠·임시저장·버전 기록은 서버의 Netlify Blobs에 저장됩니다. 브라우저 저장소는 보조 캐시이며 백업이 아닙니다.',
+                          'Published content, drafts and history live in server-side Netlify Blobs. Browser storage is a cache, not a backup.'
                         )}
                       </p>
                       <p>
                         {t(
-                          '管理者権限の検証は authService.isAuthorizedAdmin() を通じてクライアント側で厳格に照合されています。バックエンドDB（Firestore等）を接続する場合は、サーバーサイドのセキュリティルール（firestore.rules）に request.auth.token.email == adminEmail の照合を組み込むことで、完全なサーバーサイド検証が実現可能です。',
-                          '관리자 권한 검증은 authService.isAuthorizedAdmin()을 통해 브라우저 앱 런타임에서 단일 관리자 화이트리스트로 엄격히 대조됩니다. 향후 백엔드 DB(Firestore 등) 연동 시에는 firestore.rules를 통해 서버 차원의 완벽한 권한 강제가 가능합니다.',
-                          'Administrator authorization is strictly checked against the allowlisted admin email via authService.isAuthorizedAdmin(). For multi-user environments with a cloud database, configuring server-side security rules in firestore.rules ensures end-to-end enforcement.'
+                          '管理操作は Google ID トークンをサーバーで検証した管理者の HttpOnly セッションと CSRF 保護が必要です。バックアップの復元は下書きに限定されます。',
+                          '관리 작업은 서버가 확인한 Google 계정의 HttpOnly 관리자 세션과 CSRF 검사가 필요합니다. 백업 복원은 우선 임시저장으로만 적용됩니다.',
+                          'Admin changes require a server-verified Google login, HttpOnly session and CSRF token. Backup recovery restores only to Draft.'
                         )}
                       </p>
                     </div>
