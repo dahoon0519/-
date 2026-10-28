@@ -23,7 +23,7 @@ jobs:
             'fa45806e-b11f-46c8-84ff-5e0e782398b1',
           ]
           versions = [1793163054, 1793163097, 1793163130, 1793163197, 1793163216]
-          canvas=Image.new('RGB',(1200,310),'#eeeae3')
+          canvas=Image.new('RGB',(1440,310),'#eeeae3')
           draw=ImageDraw.Draw(canvas)
           for i, (asset, version) in enumerate(zip(refs, versions)):
             url=f'https://res.cloudinary.com/sxl1v5vx/image/upload/c_fill,w_480,h_480/v{version}/dahoon-portfolio/{asset}.jpg'
@@ -35,6 +35,15 @@ jobs:
             x=i*240+(240-photo.width)//2
             canvas.paste(photo,(x,28))
             draw.text((i*240+16,5),f'PHOTO {i+1}',fill='#111111')
+          try:
+            video_url='https://res.cloudinary.com/sxl1v5vx/video/upload/so_4,c_fill,w_480,h_480/v1793163397/dahoon-portfolio/e30937a9-44db-411d-a7e3-e6dc60174b4b.jpg'
+            with urllib.request.urlopen(urllib.request.Request(video_url,headers={'User-Agent':'PortfolioVisualReview/1.0'}),timeout=20) as response:
+              frame=Image.open(io.BytesIO(response.read())).convert('RGB')
+            frame.thumbnail((224,260))
+            canvas.paste(frame,(5*240+(240-frame.width)//2,28))
+            draw.text((5*240+16,5),'VIDEO FRAME',fill='#111111')
+          except Exception as e:
+            print('VIDEO_FRAME_ERROR '+str(e)[:180])
           out=io.BytesIO()
           canvas.save(out,format='JPEG',quality=56,optimize=True)
           print('IMG_START'+base64.b64encode(out.getvalue()).decode()+'IMG_END')
