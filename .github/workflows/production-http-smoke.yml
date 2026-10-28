@@ -11,7 +11,7 @@ jobs:
   production-http:
     # This checksum is specifically for the PR #3 release.
     # Future legitimate content edits must not be blocked by a stale baseline.
-    if: startsWith(github.event.head_commit.message, 'Release portfolio PR #3:')
+    if: "startsWith(github.event.head_commit.message, 'Release portfolio PR #3:')"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
