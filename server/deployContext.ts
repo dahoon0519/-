@@ -2,3 +2,5 @@
 // Never edit manually or use this for authentication.
 export const BUILD_DEPLOY_CONTEXT: string = 'dev';
 export const BUILD_STORAGE_NAMESPACE: string | null = null;
+
+export const BUILD_COMMIT_SHA: string | null = null;
