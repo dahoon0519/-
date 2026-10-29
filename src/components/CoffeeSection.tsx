@@ -110,11 +110,12 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
               as="h2"
               className="text-2xl sm:text-3xl font-serif-jp text-[#1C1A19] font-normal tracking-wide block"
             />
+            {(coffeeContent.sectionSubtitle?.trim() || isEditMode) && (
             <div className="mt-2">
               <EditableText
                 isEditMode={isEditMode}
                 value={
-                  coffeeContent.sectionSubtitle ||
+                  coffeeContent.sectionSubtitle ??
                   (currentLang === 'ja'
                     ? '現場で実際に学び、現在も探求を続けているコーヒー抽出の記録です。'
                     : currentLang === 'ko'
@@ -126,6 +127,7 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
                 className="text-sm text-[#736D64] max-w-xl block"
               />
             </div>
+            )}
             <div className="w-12 h-[1px] bg-[#B0A799] mt-4" />
           </div>
 
