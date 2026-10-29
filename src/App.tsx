@@ -1150,7 +1150,15 @@ export default function App() {
           onUpdateAboutField={handleUpdateAboutField}
         />
 
-        {/* 3. Coffee Section (with customizable 1~4 explanations) */}
+        {/* 3. What I Value */}
+        <ValuesSection
+          currentLang={currentLang}
+          siteValues={activeContent.values}
+          isEditMode={isAdmin && isEditMode}
+          onUpdateValuesText={handleUpdateValuesText}
+        />
+
+        {/* 4. Coffee Section (with customizable 1~4 explanations) */}
         <CoffeeSection
           currentLang={currentLang}
           cafeVisits={activeContent.cafeVisits || cafeVisits}
@@ -1173,7 +1181,7 @@ export default function App() {
           onOpenPhoto={setSelectedPhoto}
         />
 
-        {/* 4. Latte Art Section */}
+        {/* 5. Latte Art Section */}
         <LatteArtSection
           currentLang={currentLang}
           photos={activeContent.lattePhotos || lattePhotos}
@@ -1189,7 +1197,7 @@ export default function App() {
           onUpdateLatteArtField={handleUpdateLatteArtField}
         />
 
-        {/* 5. Food Section (with customizable dishes portfolio and role overview) */}
+        {/* 6. Food Section (with customizable dishes portfolio and role overview) */}
         <FoodSection
           currentLang={currentLang}
           foodPhotos={activeContent.foodPhotos || foodPhotos}
@@ -1208,20 +1216,12 @@ export default function App() {
           onUpdateFoodText={handleUpdateFoodText}
         />
 
-        {/* 6. Experience Timeline */}
+        {/* 7. Experience Timeline */}
         <ExperienceSection
           currentLang={currentLang}
           siteExperience={activeContent.experience}
           isEditMode={isAdmin && isEditMode}
           onUpdateExperienceText={handleUpdateExperienceText}
-        />
-
-        {/* 7. What I Value */}
-        <ValuesSection
-          currentLang={currentLang}
-          siteValues={activeContent.values}
-          isEditMode={isAdmin && isEditMode}
-          onUpdateValuesText={handleUpdateValuesText}
         />
 
         {/* 8. Contact Section (Direct Message Form & Connected Admin Email) */}
