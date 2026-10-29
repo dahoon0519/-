@@ -1299,6 +1299,11 @@ export default function App() {
               ...activeContent.contact,
               emailValue: sanitizedInfo.email,
               name: sanitizedInfo.name,
+              locationValue: {
+                ...activeContent.contact.locationValue,
+                [currentLang]: sanitizedInfo.location,
+              },
+              instagramPlaceholder: sanitizedInfo.instagram,
             },
           });
         }}

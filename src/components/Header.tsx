@@ -56,11 +56,11 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="sticky top-0 z-40 bg-[#FAF8F5]/94 backdrop-blur-md border-b border-[#EBE6DD] transition-all">
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 h-18 flex items-center justify-between gap-2 lg:gap-3 xl:gap-6">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 min-h-18 py-3 flex flex-wrap items-center justify-between gap-2 lg:gap-3">
         {/* Brand / Name */}
         <button
           onClick={() => scrollToSection('home')}
-          className="text-left group cursor-pointer focus:outline-none shrink-0"
+          className="order-1 text-left group cursor-pointer focus:outline-none min-w-0 max-w-[45%] lg:max-w-none"
         >
           <span className="font-serif-jp text-base sm:text-lg tracking-wider text-[#1F1E1D] group-hover:text-[#614E3C] transition-colors">
             {heroName}
@@ -70,8 +70,8 @@ export const Header: React.FC<HeaderProps> = ({
           </span>
         </button>
 
-        {/* Desktop Navigation Links (optimized for 1024px–1280px collision avoidance) */}
-        <nav className="hidden lg:flex items-center space-x-2 xl:space-x-4 text-xs xl:text-[13px] text-[#5C564E] shrink min-w-0">
+        {/* A separate wrapping row keeps every language and admin control reachable. */}
+        <nav className="order-3 basis-full hidden lg:flex flex-wrap items-center justify-center gap-x-2 xl:gap-x-4 gap-y-1 text-xs xl:text-[13px] text-[#5C564E] min-w-0">
           {activeCategories.map((item) => {
             const isActive = activeSection === item.targetId;
             return (
@@ -94,7 +94,7 @@ export const Header: React.FC<HeaderProps> = ({
         </nav>
 
         {/* Language Switcher and Admin Trigger */}
-        <div className="flex items-center space-x-2 sm:space-x-3 xl:space-x-4 shrink-0">
+        <div className="order-2 ml-auto flex items-center space-x-2 sm:space-x-3 xl:space-x-4 shrink-0">
           <div className="flex items-center text-[11px] xl:text-xs tracking-wider text-[#736D64]">
             <button
               onClick={() => onLanguageChange('ja')}

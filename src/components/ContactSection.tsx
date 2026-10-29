@@ -53,11 +53,11 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
       : profileInfo?.email && profileInfo.email !== 'dhgh159030@gmail.com'
       ? profileInfo.email
       : 'dahoon0519@gmail.com';
-  const currentName = profileInfo?.name || siteContact.name;
+  const currentName = siteContact.name ?? profileInfo?.name;
   const currentLocation =
-    profileInfo?.location || siteContact.locationValue[currentLang] || siteContact.locationValue['ja'];
+    siteContact.locationValue?.[currentLang] ?? siteContact.locationValue?.['ja'] ?? profileInfo?.location ?? '';
   const currentInstagram =
-    profileInfo?.instagram || siteContact.instagramPlaceholder;
+    siteContact.instagramPlaceholder ?? profileInfo?.instagram ?? '';
 
   const handleCopyEmail = () => {
     navigator.clipboard.writeText(targetEmail);
