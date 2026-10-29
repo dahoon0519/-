@@ -51,9 +51,9 @@ export const LatteArtSection: React.FC<LatteArtSectionProps> = ({
   const t = translations[currentLang];
 
   const title = siteLatteArt?.title[currentLang] || t.latteArt.title;
-  const subtitle = siteLatteArt?.subtitle[currentLang] || t.latteArt.subtitle;
+  const subtitle = siteLatteArt?.subtitle[currentLang] ?? t.latteArt.subtitle;
   const body = siteLatteArt?.body[currentLang] || t.latteArt.body;
-  const note = siteLatteArt?.note[currentLang] || t.latteArt.note;
+  const note = siteLatteArt?.note[currentLang] ?? t.latteArt.note;
   const manageBtn = siteLatteArt?.manageBtn[currentLang] || t.latteArt.manageBtn;
 
   const handleOpenAdd = () => {
@@ -110,6 +110,7 @@ export const LatteArtSection: React.FC<LatteArtSectionProps> = ({
               as="h2"
               className="text-2xl sm:text-3xl font-serif-jp text-[#1C1A19] font-normal tracking-wide block"
             />
+            {(subtitle?.trim() || isEditMode) && (
             <div className="mt-2">
               <EditableText
                 isEditMode={isEditMode}
@@ -119,6 +120,7 @@ export const LatteArtSection: React.FC<LatteArtSectionProps> = ({
                 className="text-sm text-[#736D64] max-w-xl block"
               />
             </div>
+            )}
             <div className="w-12 h-[1px] bg-[#B0A799] mt-4" />
           </div>
 
