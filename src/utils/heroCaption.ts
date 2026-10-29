@@ -13,5 +13,10 @@ export function heroCaption(photo: HeroPhotoInfo, language: Language) {
   return {
     title: photo.titleI18n?.[language] ?? fallbackTitle,
     type: photo.typeI18n?.[language] ?? fallbackType,
+    description: legacy ? {
+      ko: '라떼아트를 만드는 모습을 고객님께서 촬영해 보내주신 영상입니다.',
+      ja: 'ラテアートを描いているところを、お客様が撮影して送ってくださいました。',
+      en: 'A guest filmed me making this latte art and kindly sent me the video.',
+    }[language] : (photo.description || ''),
   };
 }
