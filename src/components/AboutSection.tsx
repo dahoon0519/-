@@ -103,7 +103,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
                   onChange={(val) => onUpdateAboutField?.(story.fieldBody, val)}
                   as="p"
                   multiline
-                  className="text-sm sm:text-[15px] text-[#544E45] leading-relaxed sm:leading-loose block"
+                  className="text-sm sm:text-[15px] text-[#544E45] leading-relaxed sm:leading-loose block whitespace-pre-line"
                 />
               </div>
             </article>
