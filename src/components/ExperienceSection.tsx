@@ -126,7 +126,7 @@ export const ExperienceSection: React.FC<ExperienceSectionProps> = ({
                     {item.highlights.map((duty, dIdx) => (
                       <React.Fragment key={`exp-duty-${(item as any).id || idx}-${dIdx}`}>
                         <span className="hover:text-[#1F1E1D] transition-colors">
-                          {duty}
+                          {currentLang === 'ko' ? duty.replaceAll('라테아트', '라떼아트') : duty}
                         </span>
                         {dIdx < item.highlights.length - 1 && (
                           <span className="text-[#CCC4B6] select-none">·</span>
@@ -143,3 +143,4 @@ export const ExperienceSection: React.FC<ExperienceSectionProps> = ({
     </section>
   );
 };
+
