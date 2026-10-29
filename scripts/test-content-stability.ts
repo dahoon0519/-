@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import { apiClient } from '../src/services/apiClient';
+import { authService } from '../src/services/authService';
+import { loadDraftContent, loadPublishedContent } from '../src/services/siteContentService';
+import { heroCaption } from '../src/utils/heroCaption';
+
+const values = new Map<string, string>();
+const storage = { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => values.set(k, v), removeItem: (k: string) => values.delete(k) };
+Object.assign(globalThis, { localStorage: storage });
+authService.isAuthorizedAdmin = () => true;
+values.set('dahoon_site_content_draft', JSON.stringify({ old: true }));
+apiClient.get = (async () => ({ draft: null })) as typeof apiClient.get;
+assert.equal(await loadDraftContent(), null, 'a server-confirmed empty draft must not revive a local draft');
+assert.ok(values.has('dahoon_site_content_draft'), 'the local copy must remain recoverable');
+apiClient.get = (async () => { throw new Error('offline'); }) as typeof apiClient.get;
+assert.equal(await loadDraftContent(), null, 'an offline draft must not be silently loaded');
+await assert.rejects(loadPublishedContent(), /Published content is unavailable/, 'missing published content must not show sample data');
+const legacy = { imageUrl: 'video.mp4', title: '고객님께서 찍어주셨던', type: '라떼아트 푸어 영상' };
+assert.equal(heroCaption(legacy, 'ja').title, 'お客様が撮影してくださった');
+assert.equal(heroCaption(legacy, 'en').type, 'Latte art pour');
+assert.match(heroCaption(legacy, 'ko').description, /고객님께서/);
+assert.match(heroCaption(legacy, 'ja').description, /お客様/);
+assert.equal(heroCaption({ ...legacy, titleI18n: { ja: '変更したタイトル' } }, 'ja').title, '変更したタイトル');
+assert.equal(heroCaption({ imageUrl: 'image.jpg', title: 'Other work', type: 'Photo' }, 'ja').title, 'Other work');
+console.log('Content loading and localized caption checks passed');

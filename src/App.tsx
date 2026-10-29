@@ -84,6 +84,7 @@ export default function App() {
   // Published & Draft content state
   // Unauthenticated visitors strictly view publishedContent
   const [publishedContent, setPublishedContent] = useState<SiteContent>(defaultSiteContent);
+  const [contentStatus, setContentStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [draftContent, setDraftContent] = useState<SiteContent | null>(null);
   const [isPreviewingDraft, setIsPreviewingDraft] = useState<boolean>(false);
 
@@ -110,6 +111,7 @@ export default function App() {
           loaded.contact.emailValue = 'dahoon0519@gmail.com';
         }
         setPublishedContent(loaded);
+        setContentStatus('ready');
         setSavedSiteContentSnapshot(loaded);
         if (loaded.contact?.emailValue) {
           setProfileInfo((prev) => ({
@@ -119,7 +121,7 @@ export default function App() {
           }));
         }
       }
-    });
+    }).catch(() => setContentStatus('error'));
 
     // Check genuine server-verified admin session
     authService.checkSession().then((res) => {
@@ -1053,6 +1055,16 @@ export default function App() {
 
   const t = translations[currentLang];
 
+  if (contentStatus !== 'ready') {
+    return (
+      <main className="min-h-screen bg-[#FAF8F5] flex items-center justify-center px-6 text-center text-[#4A453E]" aria-live="polite">
+        {contentStatus === 'loading' ? <p>読み込み中…</p> : (
+          <div className="space-y-4"><p>ポートフォリオを読み込めませんでした。もう一度お試しください。</p><button className="underline" onClick={() => window.location.reload()}>再読み込み</button></div>
+        )}
+      </main>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-[#2C2926] font-sans-jp flex flex-col selection:bg-[#E4DED4] selection:text-[#1F1E1D]">
       {/* Admin Draft Preview Notification Banner */}
@@ -1411,3 +1423,4 @@ export default function App() {
     </div>
   );
 }
+

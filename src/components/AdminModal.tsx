@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { uploadPortfolioMedia } from '../utils/mediaUpload';
 import { apiClient } from '../services/apiClient';
+import { heroCaption } from '../utils/heroCaption';
 import {
   Language,
   LatteArtPhoto,
@@ -1035,7 +1036,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         </label>
                       </div>
 
-                      <div className="flex-1 space-y-2 w-full">
+                      <div className="flex-1 space-y-2 w-full min-w-0">
                         <div>
                           <label className="text-[#80776C] text-[11px] block mb-1">
                             {t('作品タイトル', '작품 제목', 'Title')}
@@ -1062,6 +1063,22 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                             className="w-full px-2.5 py-1.5 border border-[#DDD6CB] rounded text-xs bg-[#FAF8F5] text-[#222]"
                           />
                         </div>
+                        {(['ko', 'ja', 'en'] as Language[]).map((lang) => (
+                          <div key={lang} className="border-t border-[#E5DDD1] pt-2 space-y-1">
+                            <label className="text-[#80776C] text-[11px] block" htmlFor={`hero-title-${lang}`}>
+                              {t('表示タイトル', '표시 제목', 'Display title')} ({lang.toUpperCase()})
+                            </label>
+                            <input id={`hero-title-${lang}`} type="text" value={heroCaption(heroPhoto, lang).title}
+                              onChange={(e) => onUpdateHeroPhoto({ ...heroPhoto, titleI18n: { ...heroPhoto.titleI18n, [lang]: e.target.value } })}
+                              className="w-full px-2.5 py-1.5 border border-[#DDD6CB] rounded text-xs bg-[#FAF8F5] text-[#222]" />
+                            <label className="text-[#80776C] text-[11px] block" htmlFor={`hero-type-${lang}`}>
+                              {t('表示補足', '표시 보충 문구', 'Display subtitle')} ({lang.toUpperCase()})
+                            </label>
+                            <input id={`hero-type-${lang}`} type="text" value={heroCaption(heroPhoto, lang).type}
+                              onChange={(e) => onUpdateHeroPhoto({ ...heroPhoto, typeI18n: { ...heroPhoto.typeI18n, [lang]: e.target.value } })}
+                              className="w-full px-2.5 py-1.5 border border-[#DDD6CB] rounded text-xs bg-[#FAF8F5] text-[#222]" />
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -2491,3 +2508,4 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     </div>
   );
 };
+

@@ -4,6 +4,7 @@ import { Language, HeroPhotoInfo, LatteArtPhoto, isVideoMedia, SiteContent } fro
 import { translations } from '../i18n/translations';
 import { ChevronDown, Eye, Camera, Edit2, Play, Video as VideoIcon } from 'lucide-react';
 import { EditableText } from './EditableText';
+import { heroCaption } from '../utils/heroCaption';
 
 interface HomeSectionProps {
   currentLang: Language;
@@ -36,6 +37,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
   const heroTitle = siteHero?.title[currentLang] || t.hero.title;
   const heroKeywords = siteHero?.keywords[currentLang] || t.hero.keywords;
   const heroSubtext = siteHero?.subtext[currentLang] || t.hero.subtext;
+  const caption = heroCaption(heroPhoto, currentLang);
 
   const scrollToAbout = () => {
     const el = document.getElementById('about');
@@ -67,9 +69,9 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
   const handleHeroClick = () => {
     onOpenPhoto({
       id: 'hero-photo',
-      title: heroPhoto.title,
-      description: heroPhoto.description || '',
-      type: heroPhoto.type,
+      title: caption.title,
+      description: caption.description,
+      type: caption.type,
       imageUrl: heroPhoto.imageUrl,
       mediaType: isVideoMedia(heroPhoto.imageUrl, heroPhoto.mediaType)
         ? 'video'
@@ -151,7 +153,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
             ) : (
               <img
                 src={heroPhoto.imageUrl}
-                alt={heroPhoto.title}
+                alt={caption.title}
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
               />
             )}
@@ -219,9 +221,9 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
           {/* Caption */}
           <div className="mt-3 flex items-center justify-between text-xs text-[#807A70] px-1">
             <span className="font-serif-jp text-[#4A453D] font-medium">
-              {heroPhoto.title}
+              {caption.title}
             </span>
-            <span>{heroPhoto.type || 'Swan Free Pour'}</span>
+            <span>{caption.type}</span>
           </div>
         </div>
 
@@ -241,3 +243,4 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
     </section>
   );
 };
+

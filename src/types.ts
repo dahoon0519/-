@@ -120,6 +120,8 @@ export interface HeroPhotoInfo {
   imageUrl: string;
   title: string;
   type?: string;
+  titleI18n?: Partial<Record<Language, string>>;
+  typeI18n?: Partial<Record<Language, string>>;
   description?: string;
   mediaType?: 'image' | 'video';
 }
@@ -340,3 +342,4 @@ export const isVideoMedia = (
     url.includes('blob:')
   );
 };
+
