@@ -18,6 +18,8 @@ await assert.rejects(loadPublishedContent(), /Published content is unavailable/,
 const legacy = { imageUrl: 'video.mp4', title: '고객님께서 찍어주셨던', type: '라떼아트 푸어 영상' };
 assert.equal(heroCaption(legacy, 'ja').title, 'お客様が撮影してくださった');
 assert.equal(heroCaption(legacy, 'en').type, 'Latte art pour');
+assert.match(heroCaption(legacy, 'ko').description, /고객님께서/);
+assert.match(heroCaption(legacy, 'ja').description, /お客様/);
 assert.equal(heroCaption({ ...legacy, titleI18n: { ja: '変更したタイトル' } }, 'ja').title, '変更したタイトル');
 assert.equal(heroCaption({ imageUrl: 'image.jpg', title: 'Other work', type: 'Photo' }, 'ja').title, 'Other work');
 console.log('Content loading and localized caption checks passed');
