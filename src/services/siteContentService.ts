@@ -208,7 +208,7 @@ export async function loadPublishedContent(): Promise<SiteContent> {
     console.error('Error loading published content from local storage:', e);
   }
 
-  return migrateLegacyCoffeeToSiteContent(defaultSiteContent);
+  throw new Error('Published content is unavailable');
 }
 
 /**
@@ -236,21 +236,13 @@ export async function loadDraftContent(): Promise<SiteContent | null> {
       } catch {}
       return merged;
     }
+    // A successful response without a draft is authoritative. Preserve any
+    // local copy, but never load it over newer published content.
+    return null;
   } catch (err) {
-    console.warn('Backend loadDraftContent error, checking local storage:', err);
+    console.warn('Backend draft unavailable; local copy preserved:', err);
+    return null;
   }
-
-  try {
-    const saved = localStorage.getItem(DRAFT_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return mergeWithDefaults(parsed);
-    }
-  } catch (e) {
-    console.error('Error loading draft content:', e);
-  }
-
-  return null;
 }
 
 /**
@@ -1337,3 +1329,4 @@ export function migrateLegacyCoffeeToSiteContent(content: SiteContent): SiteCont
 
   return copy;
 }
+
