@@ -46,6 +46,11 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
   const [isVisitModalOpen, setIsVisitModalOpen] = useState(false);
   const [visitToEdit, setVisitToEdit] = useState<CafeVisit | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [visitPage, setVisitPage] = useState(0);
+  const visitsPerPage = 5;
+  const pageCount = Math.max(1, Math.ceil(cafeVisits.length / visitsPerPage));
+  const currentVisitPage = Math.min(visitPage, pageCount - 1);
+  const visitOffset = currentVisitPage * visitsPerPage;
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -80,6 +85,7 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
       }
     } else {
       onAddCafeVisit(savedVisit);
+      setVisitPage(Math.floor(cafeVisits.length / visitsPerPage));
     }
     setIsVisitModalOpen(false);
   };
@@ -447,8 +453,10 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
                 : 'No cafe visits recorded yet.'}
             </p>
           ) : (
-            <div className="divide-y divide-[#EDE7DC] border-t border-[#ECE5DA]">
-              {cafeVisits.map((visit, index) => {
+            <div className="border-t border-[#ECE5DA]">
+              <div className="divide-y divide-[#EDE7DC]">
+              {cafeVisits.slice(visitOffset, visitOffset + visitsPerPage).map((visit, pageIndex) => {
+                const index = visitOffset + pageIndex;
                 const displayName = visit.nameI18n?.[currentLang] || visit.name;
                 const displayLocation = visit.locationI18n?.[currentLang] || visit.location;
                 const displayCoffee = visit.coffeeI18n?.[currentLang] || visit.coffee;
@@ -633,6 +641,18 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
                   </div>
                 );
               })}
+              </div>
+              {pageCount > 1 && (
+                <nav aria-label={currentLang === 'ja' ? 'カフェ訪問記録のページ' : currentLang === 'ko' ? '카페 방문 기록 페이지' : 'Cafe visit pages'} className="flex items-center justify-center gap-3 pt-5 text-xs">
+                  <button type="button" onClick={() => setVisitPage(currentVisitPage - 1)} disabled={currentVisitPage === 0} className="rounded border border-[#DDD5C9] px-3 py-2 disabled:opacity-40">
+                    {currentLang === 'ja' ? '前へ' : currentLang === 'ko' ? '이전' : 'Previous'}
+                  </button>
+                  <span aria-live="polite">{currentVisitPage + 1} / {pageCount}</span>
+                  <button type="button" onClick={() => setVisitPage(currentVisitPage + 1)} disabled={currentVisitPage >= pageCount - 1} className="rounded border border-[#DDD5C9] px-3 py-2 disabled:opacity-40">
+                    {currentLang === 'ja' ? '次へ' : currentLang === 'ko' ? '다음' : 'Next'}
+                  </button>
+                </nav>
+              )}
             </div>
           )}
         </div>
