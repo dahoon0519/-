@@ -153,11 +153,12 @@ export const FoodSection: React.FC<FoodSectionProps> = ({
               as="h2"
               className="text-2xl sm:text-3xl font-serif-jp text-[#1C1A19] font-normal tracking-wide block"
             />
+            {(foodOverview.subtitle?.trim() || isEditMode) && (
             <div className="mt-2">
               <EditableText
                 isEditMode={isEditMode}
                 value={
-                  foodOverview.subtitle ||
+                  foodOverview.subtitle ??
                   (currentLang === 'ja'
                     ? '飲食店現場における調理・サービスの現役経験です。'
                     : currentLang === 'ko'
@@ -169,6 +170,7 @@ export const FoodSection: React.FC<FoodSectionProps> = ({
                 className="text-sm text-[#736D64] max-w-xl block"
               />
             </div>
+            )}
             <div className="w-12 h-[1px] bg-[#B0A799] mt-4" />
           </div>
 

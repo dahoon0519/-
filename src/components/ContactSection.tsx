@@ -325,13 +325,15 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                     className="text-xs uppercase tracking-wider font-semibold"
                   />
                 </div>
+                {((siteContact.formSubtitle[currentLang] ?? siteContact.formSubtitle['ja'])?.trim() || isEditMode) && (
                 <EditableText
                   isEditMode={isEditMode}
-                  value={siteContact.formSubtitle[currentLang] || siteContact.formSubtitle['ja']}
+                  value={siteContact.formSubtitle[currentLang] ?? siteContact.formSubtitle['ja']}
                   onChange={(val) => onUpdateContactText?.('formSubtitle', val)}
                   as="p"
                   className="text-xs text-[#7D766C] block"
                 />
+                )}
               </div>
 
               {submitSuccess ? (

@@ -51,10 +51,22 @@ function digestContent(payload) {
 }
 
 async function assertDenied(url, options) {
-  const response = await request(url, options);
-  assert.ok([401, 403].includes(response.status),
-    `Expected HTTP 401/403 for unauthenticated ${options.method} ${url}; got ${response.status}`);
-  console.log(`[PASS] ${options.method} ${new URL(url).pathname} without admin session is denied (HTTP ${response.status})`);
+  // Netlify may briefly return a routing 404 immediately after the Functions
+  // bundle becomes healthy. Retry this transient status, but do not accept it
+  // as evidence of functioning authorization checks.
+  let lastStatus = null;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const response = await request(url, options);
+    lastStatus = response.status;
+    if ([401, 403].includes(response.status)) {
+      console.log(`[PASS] ${options.method} ${new URL(url).pathname} without admin session is denied (HTTP ${response.status})`);
+      return;
+    }
+    if (response.status !== 404 || attempt === 5) break;
+    console.log(`[WAIT] Routing 404 for ${options.method} ${new URL(url).pathname}; retrying authentication check`);
+    await new Promise(resolve => setTimeout(resolve, 3500));
+  }
+  assert.fail(`Expected HTTP 401/403 for unauthenticated ${options.method} ${url}; got ${lastStatus}`);
 }
 
 await waitForExactPreviewDeploy();

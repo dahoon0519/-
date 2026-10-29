@@ -1096,7 +1096,7 @@ export function getCoffeeSectionContent(
 
   return {
     sectionTitle: c.title?.[lang] || defCoffee.title[lang],
-    sectionSubtitle: c.subtitle?.[lang] || defCoffee.subtitle[lang],
+    sectionSubtitle: c.subtitle?.[lang] ?? defCoffee.subtitle[lang],
     espresso: {
       title: esp?.title || defCoffee.espresso[lang].title,
       tag: esp?.tag || defCoffee.espresso[lang].tag,
@@ -1325,7 +1325,7 @@ export function migrateLegacyCoffeeToSiteContent(content: SiteContent): SiteCont
 
   // 4. Ensure all English fields exist and are independent
   if (!copy.coffee.title?.en) copy.coffee.title.en = defaultSiteContent.coffee.title.en;
-  if (!copy.coffee.subtitle?.en) copy.coffee.subtitle.en = defaultSiteContent.coffee.subtitle.en;
+  if (copy.coffee.subtitle?.en === undefined) copy.coffee.subtitle.en = defaultSiteContent.coffee.subtitle.en;
   if (!copy.coffee.espresso?.en) copy.coffee.espresso.en = defaultSiteContent.coffee.espresso.en;
   if (!copy.coffee.sensory?.en) copy.coffee.sensory.en = defaultSiteContent.coffee.sensory.en;
   if (!copy.coffee.handDrip?.en) copy.coffee.handDrip.en = defaultSiteContent.coffee.handDrip.en;
