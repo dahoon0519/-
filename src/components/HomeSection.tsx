@@ -70,7 +70,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
     onOpenPhoto({
       id: 'hero-photo',
       title: caption.title,
-      description: heroPhoto.description || '',
+      description: caption.description,
       type: caption.type,
       imageUrl: heroPhoto.imageUrl,
       mediaType: isVideoMedia(heroPhoto.imageUrl, heroPhoto.mediaType)
