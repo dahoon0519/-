@@ -534,14 +534,35 @@ export default function App() {
     }
   });
 
-  const currentFoodOverview =
+  // Server-published SiteContent.food is authoritative. Legacy localStorage
+  // may be used only as a fallback when older content lacks a field.
+  const localFoodOverview =
     currentLang === 'ko'
       ? foodOverviewKo
       : currentLang === 'en'
       ? foodOverviewEn
       : foodOverviewJa;
+  const currentFoodOverview: FoodOverviewContent = {
+    ...localFoodOverview,
+    title: activeContent.food?.title?.[currentLang] ?? localFoodOverview.title,
+    subtitle: activeContent.food?.subtitle?.[currentLang] ?? localFoodOverview.subtitle,
+    roleTitle: activeContent.food?.currentRole?.[currentLang] ?? localFoodOverview.roleTitle,
+    roleDesc: activeContent.food?.currentDesc?.[currentLang] ?? localFoodOverview.roleDesc,
+    pastNote: activeContent.food?.pastNote?.[currentLang] ?? localFoodOverview.pastNote,
+  };
 
   const handleUpdateFoodOverview = (newOverview: FoodOverviewContent) => {
+    updateActiveContent((prev) => ({
+      ...prev,
+      food: {
+        ...prev.food,
+        title: { ...prev.food.title, [currentLang]: newOverview.title },
+        subtitle: { ...prev.food.subtitle, [currentLang]: newOverview.subtitle },
+        currentRole: { ...prev.food.currentRole, [currentLang]: newOverview.roleTitle },
+        currentDesc: { ...prev.food.currentDesc, [currentLang]: newOverview.roleDesc },
+        pastNote: { ...prev.food.pastNote, [currentLang]: newOverview.pastNote },
+      },
+    }));
     if (currentLang === 'ko') {
       setFoodOverviewKo(newOverview);
       try {
@@ -561,6 +582,17 @@ export default function App() {
   };
 
   const handleResetFoodOverview = () => {
+    updateActiveContent((prev) => ({
+      ...prev,
+      food: {
+        ...prev.food,
+        title: { ...prev.food.title, [currentLang]: defaultSiteContent.food.title[currentLang] },
+        subtitle: { ...prev.food.subtitle, [currentLang]: defaultSiteContent.food.subtitle[currentLang] },
+        currentRole: { ...prev.food.currentRole, [currentLang]: defaultSiteContent.food.currentRole[currentLang] },
+        currentDesc: { ...prev.food.currentDesc, [currentLang]: defaultSiteContent.food.currentDesc[currentLang] },
+        pastNote: { ...prev.food.pastNote, [currentLang]: defaultSiteContent.food.pastNote[currentLang] },
+      },
+    }));
     if (currentLang === 'ko') {
       setFoodOverviewKo(initialFoodOverviewKo);
       try {
@@ -694,8 +726,8 @@ export default function App() {
       ...prev,
       food: {
         ...prev.food,
-        [field === 'roleDesc' ? 'currentDesc' : field]: {
-          ...(prev.food as any)[field === 'roleDesc' ? 'currentDesc' : field],
+        [field === 'roleDesc' ? 'currentDesc' : field === 'roleTitle' ? 'currentRole' : field]: {
+          ...(prev.food as any)[field === 'roleDesc' ? 'currentDesc' : field === 'roleTitle' ? 'currentRole' : field],
           [currentLang]: value,
         },
       },
