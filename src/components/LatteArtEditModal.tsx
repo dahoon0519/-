@@ -173,7 +173,9 @@ export const LatteArtEditModal: React.FC<LatteArtEditModalProps> = ({
       altText: altTexts[activeFormLang]?.trim() || altTexts[currentLang]?.trim() || altTexts.ja?.trim() || altTexts.ko?.trim() || altTexts.en?.trim() || undefined,
       titleI18n: { ...titles },
       descriptionI18n: { ...descriptions },
-      typeI18n: { ...types },
+      typeI18n: finalPattern === 'Tulip' && (photoToEdit?.type !== 'Tulip' || Object.values(types).some(value => /^(heart|hearts|하트|ハート)$/i.test(value)))
+        ? { ja: 'チューリップ', ko: '튤립', en: 'Tulip' }
+        : { ...types },
       techniqueI18n: { ...techniques },
       milkNotesI18n: { ...milkNotes },
       altTextI18n: { ...altTexts },
