@@ -174,7 +174,10 @@ export const LatteArtSection: React.FC<LatteArtSectionProps> = ({
           {photos.map((item, index) => {
             const displayTitle = item.titleI18n?.[currentLang] || item.title;
             const displayDesc = item.descriptionI18n?.[currentLang] || item.description;
-            const displayType = item.typeI18n?.[currentLang] || item.type;
+            const storedType = item.typeI18n?.[currentLang] || item.type;
+            const displayType = item.type === 'Tulip' && /^(heart|hearts|하트|ハート)$/i.test(storedType || '')
+              ? { ja: 'チューリップ', ko: '튤립', en: 'Tulip' }[currentLang]
+              : storedType;
             const displayTechnique = item.techniqueI18n?.[currentLang] || item.technique;
             const displayMilkNotes = item.milkNotesI18n?.[currentLang] || item.milkTexturingNotes;
             const displayAlt = item.altTextI18n?.[currentLang] || item.altText || displayTitle;
