@@ -615,6 +615,16 @@ export default function App() {
 
   // Modals state
   const [selectedPhoto, setSelectedPhoto] = useState<LatteArtPhoto | null>(null);
+  const [lightboxGroup, setLightboxGroup] = useState<'single' | 'latte' | 'food'>('single');
+  const openLightbox = (photo: LatteArtPhoto, group: 'single' | 'latte' | 'food') => {
+    setLightboxGroup(group);
+    setSelectedPhoto(photo);
+  };
+  const lightboxFood = (activeContent.foodPhotos || foodPhotos).filter(item => item.imageUrl).map(item => ({
+    id: item.id, title: item.title, description: item.description, type: item.category,
+    imageUrl: item.imageUrl!, mediaType: item.mediaType, date: item.date,
+    titleI18n: item.titleI18n, descriptionI18n: item.descriptionI18n, typeI18n: item.categoryI18n, altTextI18n: item.altTextI18n, altText: item.altText,
+  }));
   const [isPhotoManagerOpen, setIsPhotoManagerOpen] = useState(false);
 
   // Sync to local storage
@@ -1134,7 +1144,7 @@ export default function App() {
         <HomeSection
           currentLang={currentLang}
           heroPhoto={activeContent.heroPhoto || heroPhoto}
-          onOpenPhoto={setSelectedPhoto}
+          onOpenPhoto={(photo) => openLightbox(photo, 'single')}
           isAdmin={isAdmin}
           onChangeHeroPhoto={async (url, mediaType) => {
             const nextHero: HeroPhotoInfo = {
@@ -1190,14 +1200,14 @@ export default function App() {
           onOpenAdmin={() => setIsAdminModalOpen(true)}
           isEditMode={isAdmin && isEditMode}
           onUpdateCoffeeText={handleUpdateCoffeeText}
-          onOpenPhoto={setSelectedPhoto}
+          onOpenPhoto={(photo) => openLightbox(photo, 'single')}
         />
 
         {/* 5. Latte Art Section */}
         <LatteArtSection
           currentLang={currentLang}
           photos={activeContent.lattePhotos || lattePhotos}
-          onOpenPhoto={setSelectedPhoto}
+          onOpenPhoto={(photo) => openLightbox(photo, 'latte')}
           onOpenManager={() => setIsAdminModalOpen(true)}
           onAddPhoto={handleAddLattePhoto}
           onUpdatePhoto={handleUpdateLattePhoto}
@@ -1223,7 +1233,7 @@ export default function App() {
           onResetFoodOverview={handleResetFoodOverview}
           isAdmin={isAdmin}
           onOpenAdmin={() => setIsAdminModalOpen(true)}
-          onOpenPhoto={setSelectedPhoto}
+          onOpenPhoto={(photo) => openLightbox(photo, 'food')}
           isEditMode={isAdmin && isEditMode}
           onUpdateFoodText={handleUpdateFoodText}
         />
@@ -1250,7 +1260,7 @@ export default function App() {
       <LightboxModal
         currentLang={currentLang}
         photo={selectedPhoto}
-        photos={activeContent.lattePhotos || lattePhotos}
+        photos={lightboxGroup === 'latte' ? (activeContent.lattePhotos || lattePhotos) : lightboxGroup === 'food' ? lightboxFood : selectedPhoto ? [selectedPhoto] : []}
         onClose={() => setSelectedPhoto(null)}
         onSelectPhoto={setSelectedPhoto}
       />
