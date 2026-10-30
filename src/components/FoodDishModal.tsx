@@ -193,7 +193,7 @@ export const FoodDishModal: React.FC<FoodDishModalProps> = ({
         descriptions.ko?.trim() ||
         descriptions.en?.trim() ||
         '',
-      date: date.trim() || undefined,
+      date: date.trim(),
       imageUrl,
       mediaType: imageUrl ? mediaType || (isVideoMedia(imageUrl) ? 'video' : 'image') : undefined,
       ingredients:
