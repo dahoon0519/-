@@ -129,7 +129,6 @@ export const initialFoodPhotos: FoodPhoto[] = [
     title: '石窯ピッツァの焼成・管理 (Neapolitan / Artisanal Pizza)',
     description: 'GARB GREEN WALKにて、生地の発酵状態を見極め、高温オーブンで素早く焼き上げるピザパート。',
     category: 'Pizza',
-    date: '2023 - 現在',
   },
   {
     id: 'food-2',
