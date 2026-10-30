@@ -106,6 +106,8 @@ export const FoodSection: React.FC<FoodSectionProps> = ({
       title: item.title,
       type: item.category,
       description: item.description,
+      titleI18n: item.titleI18n, descriptionI18n: item.descriptionI18n,
+      typeI18n: item.categoryI18n, altTextI18n: item.altTextI18n, altText: item.altText,
       date: item.date,
       imageUrl: item.imageUrl,
       mediaType: isVideoMedia(item.imageUrl, item.mediaType) ? 'video' : 'image',
