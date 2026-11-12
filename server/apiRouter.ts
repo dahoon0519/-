@@ -457,10 +457,18 @@ apiRouter.post('/content/publish', requireAdminAuth, async (req: AuthenticatedRe
     const updatedHistory = [versionSnapshot, ...existingHistory].slice(0, 15);
     await portfolioStorage.setVersionHistory(updatedHistory);
 
+    // The client already has the submitted document. Returning it twice (as
+    // both `published` and `version.content`) can exceed Netlify's buffered
+    // response limit after the write has succeeded, causing a misleading 502.
     return res.json({
       success: true,
-      published,
-      version: versionSnapshot,
+      version: {
+        id: versionSnapshot.id,
+        versionNumber: versionSnapshot.versionNumber,
+        timestamp: versionSnapshot.timestamp,
+        author: versionSnapshot.author,
+        summary: versionSnapshot.summary,
+      },
     });
   } catch (err: any) {
     return res.status(503).json({
