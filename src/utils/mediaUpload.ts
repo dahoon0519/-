@@ -9,6 +9,14 @@ export type UploadedMedia = { url: string; mediaType: 'image' | 'video' };
 export const MAX_UPLOADED_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_UPLOADED_VIDEO_BYTES = 100 * 1024 * 1024;
 const MAX_SOURCE_IMAGE_BYTES = 20 * 1024 * 1024;
+export const PORTFOLIO_MEDIA_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm';
+
+export function portfolioMediaHint(lang: MediaLanguage): string {
+  return message(lang,
+    'JPEG・PNG・WebPは最大20MB（10MB超は圧縮）、GIFは10MB、MP4・WebMは100MBまで。',
+    'JPEG·PNG·WebP는 최대 20MB(10MB 초과 시 압축), GIF는 10MB, MP4·WebM은 100MB까지.',
+    'JPEG/PNG/WebP: up to 20MB (compressed above 10MB); GIF: 10MB; MP4/WebM: 100MB.');
+}
 
 type UploadSignature = {
   cloudName: string;

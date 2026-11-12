@@ -291,11 +291,8 @@ export async function discardDraftContent(): Promise<void> {
     throw new Error('권한 오류: 관리자만 임시저장본을 삭제할 수 있습니다.');
   }
 
-  try {
-    await apiClient.delete('/api/content/draft');
-  } catch (err: any) {
-    console.warn('Server discard draft warning:', err.message);
-  }
+  // A failed server deletion must not be reported as a successful discard.
+  await apiClient.delete('/api/content/draft');
 
   try {
     localStorage.removeItem(DRAFT_KEY);
@@ -404,6 +401,15 @@ export function getVersionHistory(): ContentVersion[] {
   return [];
 }
 
+/** Metadata from the authoritative server history; excludes large snapshots. */
+export type ContentVersionSummary = Omit<ContentVersion, 'content'>;
+export async function fetchVersionHistory(): Promise<ContentVersionSummary[]> {
+  if (!authService.isAuthorizedAdmin()) throw new Error('관리자만 버전 기록을 조회할 수 있습니다.');
+  const response = await apiClient.get<{ history: ContentVersionSummary[] }>('/api/content/history/summary');
+  if (!Array.isArray(response?.history)) throw new Error('서버 버전 기록을 확인하지 못했습니다.');
+  return response.history;
+}
+
 /**
  * Restores a specific version from history.
  */
@@ -412,25 +418,16 @@ export async function restoreContentVersion(versionId: string): Promise<SiteCont
     throw new Error('권한 오류: 관리자만 버전을 복원할 수 있습니다.');
   }
 
+  // Never substitute an old browser cache and publish it if server recovery fails.
+  const res = await apiClient.post<{ success: boolean; restored: SiteContent }>('/api/content/restore', { versionId });
+  if (!res?.success || !res.restored) throw new Error('서버에서 복원된 내용을 확인하지 못했습니다.');
+  const merged = mergeWithDefaults(res.restored);
   try {
-    const res = await apiClient.post<{ success: boolean; restored: SiteContent }>('/api/content/restore', { versionId });
-    if (res && res.restored) {
-      const merged = mergeWithDefaults(res.restored);
-      localStorage.setItem(PUBLISHED_KEY, JSON.stringify(merged));
-      return merged;
-    }
-  } catch (err: any) {
-    console.warn('Server restore version warning:', err.message);
+    localStorage.setItem(PUBLISHED_KEY, JSON.stringify(merged));
+  } catch (error) {
+    console.warn('Restored on server; could not update browser cache:', error);
   }
-
-  const history = getVersionHistory();
-  const target = history.find((v) => v.id === versionId);
-  if (!target) {
-    throw new Error('선택한 버전을 찾을 수 없습니다.');
-  }
-
-  const restoredContent = mergeWithDefaults(target.content);
-  return await publishContent(restoredContent, `버전 v${target.versionNumber}에서 복원됨 (${new Date().toLocaleString()})`);
+  return merged;
 }
 
 /**

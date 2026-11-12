@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { uploadPortfolioMedia } from '../utils/mediaUpload';
 import { apiClient } from '../services/apiClient';
 import { heroCaption } from '../utils/heroCaption';
+import { labelsForLattePattern } from '../utils/lattePatterns';
 import {
   Language,
   LatteArtPhoto,
@@ -84,6 +85,7 @@ interface AdminModalProps {
   siteContent: SiteContent;
   publishedSiteContent: SiteContent;
   draftContent?: SiteContent | null;
+  hasUnsavedChanges?: boolean;
   onSaveDraft?: (newContent: SiteContent) => Promise<boolean>;
   onPublish?: (newContent: SiteContent, summary?: string) => Promise<boolean>;
   onDiscardDraft?: () => Promise<void>;
@@ -91,7 +93,6 @@ interface AdminModalProps {
   onPreviewToggle?: () => void;
   isPreviewing?: boolean;
   onUpdateSiteContent: (content: SiteContent) => void;
-  onResetSiteContent: () => void;
 }
 
 const foodCategories = [
@@ -137,6 +138,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   siteContent,
   publishedSiteContent,
   draftContent,
+  hasUnsavedChanges = false,
   onSaveDraft,
   onPublish,
   onDiscardDraft,
@@ -144,7 +146,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onPreviewToggle,
   isPreviewing,
   onUpdateSiteContent,
-  onResetSiteContent,
 }) => {
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState('');
@@ -234,6 +235,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   >('categories');
   const [notification, setNotification] = useState<string | null>(null);
   const [isHeroUploading, setIsHeroUploading] = useState(false);
+  const [isSectionSaving, setIsSectionSaving] = useState(false);
+  const [sectionSaveError, setSectionSaveError] = useState<string | null>(null);
   const [checkingCloudinary, setCheckingCloudinary] = useState(false);
   const [cloudinaryResult, setCloudinaryResult] = useState<{ ok: boolean; message: string } | null>(null);
 
@@ -252,6 +255,17 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [newLatteTitle, setNewLatteTitle] = useState('');
   const [newLatteDesc, setNewLatteDesc] = useState('');
   const [newLatteType, setNewLatteType] = useState('Swan');
+  const latteTypeBeforeEdit = useRef<{
+    id: string;
+    type?: string;
+    typeI18n?: LatteArtPhoto['typeI18n'];
+  } | null>(null);
+  const latteTextBeforeEdit = useRef<{
+    id: string;
+    field: 'title' | 'description';
+    base: string;
+    translations?: Partial<Record<Language, string>>;
+  } | null>(null);
   const [newLatteDate, setNewLatteDate] = useState('');
   const [newLatteImage, setNewLatteImage] = useState<string | null>(null);
 
@@ -280,6 +294,29 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const showNotify = (msg: string) => {
     setNotification(msg);
     setTimeout(() => setNotification(null), 2500);
+  };
+
+  const saveSectionChanges = async (publish: boolean) => {
+    if (publish && !window.confirm(t(
+      '現在の変更と下書き全体を公開しますか？',
+      '현재 변경사항과 임시저장 전체를 공개할까요?',
+      'Publish all current changes and the full draft?'
+    ))) return;
+    const action = publish ? onPublish : onSaveDraft;
+    if (!action) return;
+    setIsSectionSaving(true);
+    setSectionSaveError(null);
+    try {
+      const success = await action(siteContent);
+      if (!success) throw new Error(t('保存できませんでした。入力内容を確認してください。', '저장하지 못했습니다. 입력 내용을 확인해주세요.', 'Could not save. Please check the entered values.'));
+      showNotify(publish
+        ? t('変更を公開しました', '변경사항을 게시했습니다', 'Changes published')
+        : t('下書きを保存しました', '임시저장했습니다', 'Draft saved'));
+    } catch (error: any) {
+      setSectionSaveError(error?.message || t('保存に失敗しました', '저장에 실패했습니다', 'Save failed'));
+    } finally {
+      setIsSectionSaving(false);
+    }
   };
 
   const handleVerifyIdTokenSubmit = async (e: React.FormEvent) => {
@@ -406,7 +443,38 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     val: string
   ) => {
     const updated = [...lattePhotos];
-    updated[index] = { ...updated[index], [field]: val };
+    const photo = updated[index];
+    if (field === 'title' || field === 'description') {
+      const translationsField = field === 'title' ? 'titleI18n' : 'descriptionI18n';
+      const snapshot = latteTextBeforeEdit.current?.id === photo.id && latteTextBeforeEdit.current.field === field
+        ? latteTextBeforeEdit.current
+        : null;
+      const base = snapshot?.base ?? photo[field];
+      const translations = snapshot ? snapshot.translations : photo[translationsField];
+      const oldValue = translations?.[currentLang] || base;
+
+      if (snapshot && val === oldValue) {
+        updated[index] = { ...photo, [field]: base, [translationsField]: snapshot.translations };
+      } else {
+        const nextTranslations = { ...translations };
+        for (const lang of ['ja', 'ko', 'en'] as Language[]) {
+          nextTranslations[lang] = lang === currentLang ? val : (translations?.[lang] || base);
+        }
+        updated[index] = { ...photo, [field]: val, [translationsField]: nextTranslations };
+      }
+      onUpdateLattePhotos(updated);
+      return;
+    }
+    updated[index] = {
+      ...photo,
+      [field]: val,
+      ...(field === 'type' ? {
+        typeI18n: latteTypeBeforeEdit.current?.id === photo.id &&
+          (latteTypeBeforeEdit.current.type || '') === val
+          ? latteTypeBeforeEdit.current.typeI18n
+          : labelsForLattePattern(val),
+      } : {}),
+    };
     onUpdateLattePhotos(updated);
   };
 
@@ -899,6 +967,20 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
             {/* Content Body */}
             <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-6 text-xs">
+              {(activeTab === 'categories' || activeTab === 'profile') && (hasUnsavedChanges || sectionSaveError) && (
+                <div className="rounded border border-amber-300 bg-amber-50 p-3 space-y-2" role="status">
+                  <p>{t('変更はまだ保存されていません。下書き保存または公開を選択してください。', '변경사항은 아직 저장되지 않았습니다. 임시저장 또는 게시를 선택해주세요.', 'Changes are not saved yet. Save a draft or publish them.')}</p>
+                  {sectionSaveError && <p className="text-red-700">{sectionSaveError}</p>}
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" disabled={isSectionSaving || !onSaveDraft} onClick={() => void saveSectionChanges(false)} className="rounded border px-3 py-1.5 bg-white disabled:opacity-50">
+                      {t('下書き保存', '임시저장', 'Save Draft')}
+                    </button>
+                    <button type="button" disabled={isSectionSaving || !onPublish} onClick={() => void saveSectionChanges(true)} className="rounded bg-[#5E4735] text-white px-3 py-1.5 disabled:opacity-50">
+                      {t('公開', '게시', 'Publish')}
+                    </button>
+                  </div>
+                </div>
+              )}
               {/* TAB: CATEGORIES */}
               {activeTab === 'categories' && (
                 <CategoriesManager
@@ -928,7 +1010,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   onPreviewToggle={onPreviewToggle}
                   isPreviewing={isPreviewing}
                   onSaveSiteContent={onUpdateSiteContent}
-                  onResetSiteContent={onResetSiteContent}
                   showNotify={showNotify}
                   onClose={onClose}
                 />
@@ -1227,11 +1308,20 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             <div>
                               <span className="block text-[#827A70] text-[10px] mb-0.5">
-                                {t('タイトル', '제목', 'Title')}
+                                {t('タイトル', '제목', 'Title')} ({currentLang.toUpperCase()})
                               </span>
                               <input
                                 type="text"
-                                value={photo.title}
+                                value={photo.titleI18n?.[currentLang] || photo.title}
+                                onFocus={() => {
+                                  latteTextBeforeEdit.current = {
+                                    id: photo.id,
+                                    field: 'title',
+                                    base: photo.title,
+                                    translations: photo.titleI18n,
+                                  };
+                                }}
+                                onBlur={() => { latteTextBeforeEdit.current = null; }}
                                 onChange={(e) =>
                                   handleUpdateLatteField(idx, 'title', e.target.value)
                                 }
@@ -1245,6 +1335,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                               <input
                                 type="text"
                                 value={photo.type || ''}
+                                onFocus={() => {
+                                  latteTypeBeforeEdit.current = {
+                                    id: photo.id,
+                                    type: photo.type,
+                                    typeI18n: photo.typeI18n,
+                                  };
+                                }}
+                                onBlur={() => { latteTypeBeforeEdit.current = null; }}
                                 onChange={(e) =>
                                   handleUpdateLatteField(idx, 'type', e.target.value)
                                 }
@@ -1255,11 +1353,20 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
                           <div>
                             <span className="block text-[#827A70] text-[10px] mb-0.5">
-                              {t('説明文', '설명글', 'Description')}
+                              {t('説明文', '설명글', 'Description')} ({currentLang.toUpperCase()})
                             </span>
                             <input
                               type="text"
-                              value={photo.description}
+                              value={photo.descriptionI18n?.[currentLang] || photo.description}
+                              onFocus={() => {
+                                latteTextBeforeEdit.current = {
+                                  id: photo.id,
+                                  field: 'description',
+                                  base: photo.description,
+                                  translations: photo.descriptionI18n,
+                                };
+                              }}
+                              onBlur={() => { latteTextBeforeEdit.current = null; }}
                               onChange={(e) =>
                                 handleUpdateLatteField(idx, 'description', e.target.value)
                               }

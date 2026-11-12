@@ -160,6 +160,15 @@ try {
   assert.equal(res.data.history.length, 2);
   pass('Version restore recovers original media, coffee records and published text');
 
+  res = await request('GET', '/api/content/history/summary', undefined, {});
+  assert.equal(res.status, 401);
+  res = await request('GET', '/api/content/history/summary');
+  assert.equal(res.status, 200);
+  assert.equal(res.data.history.length, 2);
+  assert.ok(res.data.history.some((item: any) => item.id === firstVersionId));
+  assert.ok(res.data.history.every((item: any) => item.content === undefined));
+  pass('Version list uses authenticated server IDs without sending large snapshots');
+
   // Server backup endpoints must be protected; no backend content is changed
   // when non-admin visitors attempt to export or restore documents.
   res = await request('GET', '/api/content/backups/export', undefined, {});

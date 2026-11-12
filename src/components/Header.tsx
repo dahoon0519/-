@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Language, SiteCategoryItem } from '../types';
 import { Menu, X, Edit3 } from 'lucide-react';
 
@@ -28,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleEditMode,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const headerRef = useRef<HTMLElement>(null);
 
   const activeCategories = (categories || [])
     .filter((cat) => cat.enabled !== false)
@@ -35,19 +36,17 @@ export const Header: React.FC<HeaderProps> = ({
 
   const scrollToSection = (id: string) => {
     setMobileMenuOpen(false);
-    const element = document.getElementById(id);
-    if (element) {
-      const offset = 80;
-      const bodyRect = document.body.getBoundingClientRect().top;
-      const elementRect = element.getBoundingClientRect().top;
-      const elementPosition = elementRect - bodyRect;
-      const offsetPosition = elementPosition - offset;
-
+    // The expanded mobile menu changes the height of the header and pushes
+    // page sections down. Measure only after React closes it.
+    window.requestAnimationFrame(() => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      const headerHeight = headerRef.current?.getBoundingClientRect().height || 0;
       window.scrollTo({
-        top: offsetPosition,
+        top: Math.max(0, window.scrollY + element.getBoundingClientRect().top - headerHeight - 8),
         behavior: 'smooth',
       });
-    }
+    });
   };
 
   const getCategoryLabel = (cat: SiteCategoryItem): string => {
@@ -55,7 +54,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-[#FAF8F5]/94 backdrop-blur-md border-b border-[#EBE6DD] transition-all">
+    <header ref={headerRef} className="sticky top-0 z-40 bg-[#FAF8F5]/94 backdrop-blur-md border-b border-[#EBE6DD] transition-all">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 min-h-18 py-3 flex flex-wrap items-center justify-between gap-2 lg:gap-3">
         {/* Brand / Name */}
         <button

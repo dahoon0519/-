@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CafeVisit, Language, isVideoMedia } from '../types';
 import { translations } from '../i18n/translations';
 import { X, Upload, Check, Trash2, AlertCircle, Image as ImageIcon } from 'lucide-react';
-import { processAndCompressMedia, validateMediaFile } from '../utils/imageUtils';
+import { uploadPortfolioMedia, PORTFOLIO_MEDIA_ACCEPT, portfolioMediaHint } from '../utils/mediaUpload';
 
 interface CafeVisitModalProps {
   currentLang: Language;
@@ -133,21 +133,16 @@ export const CafeVisitModal: React.FC<CafeVisitModalProps> = ({
     if (!file) return;
 
     setMediaError(null);
-    const validation = validateMediaFile(file, currentLang);
-    if (!validation.valid) {
-      setMediaError(validation.error || 'Invalid file');
-      return;
-    }
-
     setIsProcessingMedia(true);
     try {
-      const processed = await processAndCompressMedia(file, currentLang);
-      setImageUrl(processed.dataUrl);
-      setMediaType(processed.mediaType);
+      const media = await uploadPortfolioMedia(file, currentLang);
+      setImageUrl(media.url);
+      setMediaType(media.mediaType);
     } catch (err: any) {
       setMediaError(err.message || 'Failed to process media');
     } finally {
       setIsProcessingMedia(false);
+      e.target.value = '';
     }
   };
 
@@ -274,7 +269,7 @@ export const CafeVisitModal: React.FC<CafeVisitModalProps> = ({
                     {t.replacePhoto}
                     <input
                       type="file"
-                      accept="image/*,video/*"
+                      accept={PORTFOLIO_MEDIA_ACCEPT}
                       onChange={handleFileUpload}
                       className="hidden"
                       disabled={isProcessingMedia}
@@ -300,17 +295,17 @@ export const CafeVisitModal: React.FC<CafeVisitModalProps> = ({
                       ? '이미지 압축 처리 중...'
                       : 'Processing media...'
                     : currentLang === 'ja'
-                    ? '写真または動画ファイルを選択 (最大20MB)'
+                    ? '写真または動画ファイルを選択'
                     : currentLang === 'ko'
-                    ? '사진이나 동영상 파일 선택 (최대 20MB)'
-                    : 'Choose photo or video file (Max 20MB)'}
+                    ? '사진이나 동영상 파일 선택'
+                    : 'Choose a photo or video'}
                 </span>
                 <span className="text-[11px] text-[#8A8377] mt-0.5">
-                  JPEG, PNG, WebP, SVG, MP4
+                  {portfolioMediaHint(currentLang)}
                 </span>
                 <input
                   type="file"
-                  accept="image/*,video/*"
+                  accept={PORTFOLIO_MEDIA_ACCEPT}
                   onChange={handleFileUpload}
                   className="hidden"
                   disabled={isProcessingMedia}

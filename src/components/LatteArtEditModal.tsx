@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { LatteArtPhoto, Language, isVideoMedia } from '../types';
 import { translations } from '../i18n/translations';
 import { X, Upload, Check, Trash2, AlertCircle, Play } from 'lucide-react';
-import { uploadPortfolioMedia } from '../utils/mediaUpload';
+import { uploadPortfolioMedia, PORTFOLIO_MEDIA_ACCEPT, portfolioMediaHint } from '../utils/mediaUpload';
+import { findLattePattern, labelsForLattePattern, lattePatterns } from '../utils/lattePatterns';
 
 interface LatteArtEditModalProps {
   currentLang: Language;
@@ -13,17 +14,7 @@ interface LatteArtEditModalProps {
   onDelete?: (id: string) => void;
 }
 
-const commonPatterns = [
-  'Swan',
-  'Wing Swan',
-  'Rosetta',
-  'Tulip',
-  'Heart',
-  'Wave Heart',
-  'Slow Pour',
-  'Free Pour',
-  'Other',
-];
+const commonPatterns = Object.keys(lattePatterns);
 
 export const LatteArtEditModal: React.FC<LatteArtEditModalProps> = ({
   currentLang,
@@ -49,6 +40,7 @@ export const LatteArtEditModal: React.FC<LatteArtEditModalProps> = ({
   const [date, setDate] = useState('');
   const [patternSelect, setPatternSelect] = useState('Swan');
   const [customPattern, setCustomPattern] = useState('');
+  const [patternTouched, setPatternTouched] = useState(false);
   const [imageUrl, setImageUrl] = useState<string>('');
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
 
@@ -110,7 +102,7 @@ export const LatteArtEditModal: React.FC<LatteArtEditModalProps> = ({
     } else {
       setTitles({ ja: '', ko: '', en: '' });
       setDescriptions({ ja: '', ko: '', en: '' });
-      setTypes({ ja: '', ko: '', en: '' });
+      setTypes(labelsForLattePattern('Swan'));
       setTechniques({ ja: '', ko: '', en: '' });
       setMilkNotes({ ja: '', ko: '', en: '' });
       setAltTexts({ ja: '', ko: '', en: '' });
@@ -122,6 +114,7 @@ export const LatteArtEditModal: React.FC<LatteArtEditModalProps> = ({
     }
     setMediaError(null);
     setShowDeleteConfirm(false);
+    setPatternTouched(false);
   }, [photoToEdit, isOpen]);
 
   if (!isOpen) return null;
@@ -159,6 +152,21 @@ export const LatteArtEditModal: React.FC<LatteArtEditModalProps> = ({
 
     const currentTitle = titles[activeFormLang]?.trim() || titles[currentLang]?.trim() || titles.ja?.trim() || titles.ko?.trim() || titles.en?.trim() || t.defaultTitle;
     const finalPattern = patternSelect === 'Other' && customPattern.trim() ? customPattern.trim() : patternSelect;
+    const finalTypes = { ...types };
+
+    // Changing a selection and then returning to the original should not erase
+    // its custom translations. Repair only recognizable stale labels when the
+    // user explicitly reselects that original pattern.
+    if (photoToEdit?.type === finalPattern) {
+      const desiredPattern = findLattePattern(finalPattern);
+      for (const lang of ['ja', 'ko', 'en'] as Language[]) {
+        const original = photoToEdit.typeI18n?.[lang] || photoToEdit.type || '';
+        const originalPattern = findLattePattern(original);
+        finalTypes[lang] = patternTouched && desiredPattern && originalPattern && originalPattern !== desiredPattern
+          ? lattePatterns[desiredPattern][lang]
+          : original;
+      }
+    }
 
     const finalPhoto: LatteArtPhoto = {
       id: photoToEdit ? photoToEdit.id : `latte-${Date.now()}`,
@@ -173,9 +181,12 @@ export const LatteArtEditModal: React.FC<LatteArtEditModalProps> = ({
       altText: altTexts[activeFormLang]?.trim() || altTexts[currentLang]?.trim() || altTexts.ja?.trim() || altTexts.ko?.trim() || altTexts.en?.trim() || undefined,
       titleI18n: { ...titles },
       descriptionI18n: { ...descriptions },
-      typeI18n: finalPattern === 'Tulip' && (photoToEdit?.type !== 'Tulip' || Object.values(types).some(value => /^(heart|hearts|하트|ハート)$/i.test(value)))
-        ? { ja: 'チューリップ', ko: '튤립', en: 'Tulip' }
-        : { ...types },
+      typeI18n: finalPattern === 'Tulip'
+        ? Object.fromEntries((['ja', 'ko', 'en'] as Language[]).map((lang) => [
+            lang,
+            /^(heart|hearts|하트|ハート)$/i.test(finalTypes[lang]) ? lattePatterns.Tulip[lang] : finalTypes[lang],
+          ]))
+        : finalTypes,
       techniqueI18n: { ...techniques },
       milkNotesI18n: { ...milkNotes },
       altTextI18n: { ...altTexts },
@@ -267,7 +278,7 @@ export const LatteArtEditModal: React.FC<LatteArtEditModalProps> = ({
                     {t.replacePhoto}
                     <input
                       type="file"
-                      accept="image/*,video/*"
+                      accept={PORTFOLIO_MEDIA_ACCEPT}
                       onChange={handleFileUpload}
                       className="hidden"
                       disabled={isProcessingMedia}
@@ -293,17 +304,17 @@ export const LatteArtEditModal: React.FC<LatteArtEditModalProps> = ({
                       ? '이미지 압축 처리 중...'
                       : 'Processing media...'
                     : currentLang === 'ja'
-                    ? '写真または動画ファイルを選択 (最大20MB)'
+                    ? '写真または動画ファイルを選択'
                     : currentLang === 'ko'
-                    ? '사진이나 동영상 파일 선택 (최대 20MB)'
-                    : 'Choose photo or video file (Max 20MB)'}
+                    ? '사진이나 동영상 파일 선택'
+                    : 'Choose a photo or video'}
                 </span>
                 <span className="text-[11px] text-[#8A8377] mt-0.5">
-                  JPEG, PNG, WebP, SVG, MP4, MOV
+                  {portfolioMediaHint(currentLang)}
                 </span>
                 <input
                   type="file"
-                  accept="image/*,video/*"
+                  accept={PORTFOLIO_MEDIA_ACCEPT}
                   onChange={handleFileUpload}
                   className="hidden"
                   disabled={isProcessingMedia}
@@ -372,12 +383,19 @@ export const LatteArtEditModal: React.FC<LatteArtEditModalProps> = ({
               </label>
               <select
                 value={patternSelect}
-                onChange={(e) => setPatternSelect(e.target.value)}
+                onChange={(e) => {
+                  const nextPattern = e.target.value;
+                  setPatternSelect(nextPattern);
+                  setPatternTouched(true);
+                  setTypes(nextPattern === 'Other' && customPattern.trim()
+                    ? labelsForLattePattern(customPattern)
+                    : labelsForLattePattern(nextPattern));
+                }}
                 className="w-full px-3 py-2 bg-white border border-[#DDD6CB] rounded text-[#222]"
               >
                 {commonPatterns.map((p) => (
                   <option key={p} value={p}>
-                    {p}
+                    {currentLang === 'en' ? lattePatterns[p].en : `${lattePatterns[p][currentLang]} (${p})`}
                   </option>
                 ))}
               </select>
@@ -386,7 +404,12 @@ export const LatteArtEditModal: React.FC<LatteArtEditModalProps> = ({
                   type="text"
                   placeholder={currentLang === 'ja' ? 'パターン名を入力' : currentLang === 'ko' ? '패턴명 입력' : 'Enter pattern name'}
                   value={customPattern}
-                  onChange={(e) => setCustomPattern(e.target.value)}
+                  onChange={(e) => {
+                    const nextPattern = e.target.value;
+                    setCustomPattern(nextPattern);
+                    setPatternTouched(true);
+                    setTypes(labelsForLattePattern(nextPattern.trim() || 'Other'));
+                  }}
                   className="w-full mt-1.5 px-3 py-1.5 bg-white border border-[#DDD6CB] rounded text-[#222]"
                 />
               )}

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Download, RotateCcw, Save, ShieldCheck, Upload, AlertTriangle } from 'lucide-react';
 import { Language } from '../types';
 import { apiClient } from '../services/apiClient';
+import { downloadServerBackup } from '../services/backupExport';
 
 interface RecoveryPoint {
   id: string;
@@ -22,7 +23,9 @@ interface BackupExport {
 }
 
 export function AdminRecoveryPanel({ currentLang }: { currentLang: Language }) {
-  const [backups, setBackups] = useState<RecoveryPoint[]>([]);
+  const [backups, setBackups] = useState<RecoveryPoint[] | null>(null);
+  const [loadingBackups, setLoadingBackups] = useState(true);
+  const [importSource, setImportSource] = useState<'published' | 'draft'>('published');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -30,8 +33,17 @@ export function AdminRecoveryPanel({ currentLang }: { currentLang: Language }) {
     currentLang === 'ja' ? ja : currentLang === 'ko' ? ko : en;
 
   const refresh = async () => {
-    const response = await apiClient.get<{ backups: RecoveryPoint[] }>('/api/content/backups');
-    setBackups(response.backups || []);
+    setLoadingBackups(true);
+    try {
+      const response = await apiClient.get<{ backups: RecoveryPoint[] }>('/api/content/backups');
+      if (!Array.isArray(response.backups)) throw new Error('Invalid recovery point list');
+      setBackups(response.backups);
+    } catch (error) {
+      setBackups(null);
+      throw error;
+    } finally {
+      setLoadingBackups(false);
+    }
   };
   useEffect(() => {
     refresh().catch(error => setMessage({ error: true, text: error.message }));
@@ -51,9 +63,11 @@ export function AdminRecoveryPanel({ currentLang }: { currentLang: Language }) {
   };
 
   const download = () => run(async () => {
-    const data = await apiClient.get<BackupExport>('/api/content/backups/export');
-    if (data.format !== 'dahoon-portfolio-documents') throw new Error('Unexpected backup format');
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const bytes = await downloadServerBackup((current, total) => setMessage({
+      error: false,
+      text: t(`バックアップを取得中 (${current}/${total})`, `백업을 가져오는 중 (${current}/${total})`, `Reading backup (${current}/${total})`),
+    }));
+    const blob = new Blob([bytes.buffer], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     try {
@@ -63,7 +77,7 @@ export function AdminRecoveryPanel({ currentLang }: { currentLang: Language }) {
       anchor.click();
     } finally {
       anchor.remove();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 0);
     }
     setMessage({ error: false, text: t('サーバーデータをダウンロードしました', '서버 백업을 다운로드했습니다', 'Server backup downloaded') });
   });
@@ -91,18 +105,25 @@ export function AdminRecoveryPanel({ currentLang }: { currentLang: Language }) {
     event.target.value = '';
     if (!file) return;
     run(async () => {
-      if (file.size > 20 * 1024 * 1024) throw new Error(t('20MB 以下の JSON を選んでください', '20MB 이하 JSON만 허용됩니다', 'Choose a JSON file under 20 MB'));
+      if (file.size > 100 * 1024 * 1024) throw new Error(t('100MB 以下の JSON を選んでください', '100MB 이하 JSON만 허용됩니다', 'Choose a JSON file under 100 MB'));
       const backup = JSON.parse(await file.text()) as BackupExport;
       if (backup?.format !== 'dahoon-portfolio-documents' || backup.version !== 1) {
         throw new Error(t('以前のブラウザ用バックアップではなく、新しいサーバーバックアップを指定してください。',
           '기존 브라우저 전용 파일이 아닌 새 서버 백업 파일을 선택해주세요.',
           'Please choose a current server backup, not a legacy browser-only file.'));
       }
-      const source = backup.published ? 'published' : 'draft';
+      const source = importSource;
+      if (!backup[source]) throw new Error(t('選択した内容はこのバックアップにありません。', '선택한 내용이 이 백업에 없습니다.', 'The selected content is absent from this backup.'));
+      // History and the other document are not needed for restoring one Draft.
+      const selectedBackup = { format: backup.format, version: backup.version, [source]: backup[source] };
+      const payload = { backup: selectedBackup, source };
+      if (new TextEncoder().encode(JSON.stringify(payload)).length > 3.5 * 1024 * 1024) {
+        throw new Error(t('選択した内容が大きすぎるため読み込めません。復元ポイントをご利用ください。', '선택한 내용이 너무 커서 불러올 수 없습니다. 서버 복원 지점을 이용해주세요.', 'The selected document is too large to import. Use a server recovery point.'));
+      }
       if (!window.confirm(t('ファイルの内容を下書きに読み込みますか？公開中の内容は変更しません。',
         '파일을 임시저장으로 불러올까요? 게시 중인 내용은 변경되지 않습니다.',
         'Import as Draft only? The live content will not change.'))) return;
-      await apiClient.post('/api/content/backups/import-draft', { backup, source });
+      await apiClient.post('/api/content/backups/import-draft', payload);
       window.alert(t('下書きに読み込みました。ページを再読み込みします。',
         '임시저장으로 불러왔습니다. 페이지를 새로고침합니다.',
         'Imported as Draft. Page will reload.'));
@@ -123,9 +144,9 @@ export function AdminRecoveryPanel({ currentLang }: { currentLang: Language }) {
             'Export published content, draft and version history from the server. Automatic recovery points precede publishing and version restores.')}
         </p>
         <p className="mt-1 text-[11px] text-amber-900">
-          {t('画像・動画の実ファイルとお問い合わせの個人情報は JSON に含まれません。メディア URL の参照のみ保持します。',
-            '사진·영상 원본 파일 및 문의자의 개인정보는 JSON에 포함되지 않습니다. 미디어 URL 참조만 보관합니다.',
-            'Backup JSON preserves media URLs, not the original Cloudinary/video files. Private inquiries are excluded.')}
+          {t('Cloudinary の写真・動画は URL のみ保存されます。内容に埋め込まれた画像データは含まれます。お問い合わせの個人情報は含まれません。',
+            'Cloudinary 사진·영상은 URL만 보관합니다. 글 데이터에 포함된 이미지는 함께 담기며, 문의자의 개인정보는 제외됩니다.',
+            'Cloudinary media are saved as URLs. Images embedded in the document are included; private inquiries are excluded.')}
         </p>
       </div>
 
@@ -140,6 +161,13 @@ export function AdminRecoveryPanel({ currentLang }: { currentLang: Language }) {
           <button type="button" disabled={busy} onClick={create} className="flex items-center gap-2 rounded border px-3 py-2 disabled:opacity-50">
             <Save className="w-4 h-4" />{t('復元ポイントを作成', '안전 복원 지점 생성', 'Create recovery point')}
           </button>
+          <label className="flex items-center gap-2">
+            <span>{t('読込内容', '불러올 내용', 'Import content')}</span>
+            <select disabled={busy} value={importSource} onChange={(e) => setImportSource(e.target.value as 'published' | 'draft')} className="rounded border px-2 py-1.5 bg-white">
+              <option value="published">{t('公開版', '게시본', 'Published')}</option>
+              <option value="draft">{t('下書き', '임시저장본', 'Draft')}</option>
+            </select>
+          </label>
           <label className={'flex items-center gap-2 rounded border px-3 py-2 ' + (busy ? 'opacity-50' : 'cursor-pointer')}>
             <Upload className="w-4 h-4" />{t('JSON を下書きに読込', 'JSON을 임시저장에 불러오기', 'Import JSON into Draft')}
             <input ref={fileRef} type="file" accept=".json,application/json" disabled={busy} className="hidden" onChange={importFile}/>
@@ -157,8 +185,9 @@ export function AdminRecoveryPanel({ currentLang }: { currentLang: Language }) {
         <button type="button" disabled={busy} onClick={() => run(refresh)} className="rounded border px-3 py-1.5 disabled:opacity-50">
           {t('一覧を更新', '목록 새로고침', 'Refresh list')}
         </button>
-        {!backups.length && <p className="text-[#776D61]">{t('復元ポイントはまだありません。', '아직 복원 지점이 없습니다.', 'No recovery points yet.')}</p>}
-        {backups.map(item => <div key={item.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-t pt-3">
+        {loadingBackups && <p className="text-[#776D61]">{t('復元ポイントを読み込み中...', '복원 지점을 불러오는 중...', 'Loading recovery points...')}</p>}
+        {!loadingBackups && backups && !backups.length && <p className="text-[#776D61]">{t('復元ポイントはまだありません。', '아직 복원 지점이 없습니다.', 'No recovery points yet.')}</p>}
+        {backups?.map(item => <div key={item.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-t pt-3">
           <div>
             <p className="font-medium">{item.reason}</p>
             <p className="text-[11px] text-[#776D61]">{new Date(item.createdAt).toLocaleString()}</p>

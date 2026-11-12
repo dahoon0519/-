@@ -20,7 +20,6 @@ import {
   publishContent,
   discardDraftContent,
   restoreContentVersion,
-  resetSiteContent,
   createCoffeeBackupSnapshot,
   getCoffeeSectionContent,
   updateCoffeeSectionInSiteContent,
@@ -86,12 +85,15 @@ export default function App() {
   const [publishedContent, setPublishedContent] = useState<SiteContent>(defaultSiteContent);
   const [contentStatus, setContentStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [draftContent, setDraftContent] = useState<SiteContent | null>(null);
+  // Used to preserve the last server-saved draft if published/draft loads race.
+  const persistedDraftRef = React.useRef<SiteContent | null>(null);
   const [isPreviewingDraft, setIsPreviewingDraft] = useState<boolean>(false);
 
   // Edit Mode state for live inline page editing (Admin only)
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [savedSiteContentSnapshot, setSavedSiteContentSnapshot] = useState<SiteContent>(defaultSiteContent);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
+  const editRevisionRef = React.useRef(0);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [editStatusMessage, setEditStatusMessage] = useState<{
     type: 'success' | 'error' | 'info';
@@ -112,7 +114,7 @@ export default function App() {
         }
         setPublishedContent(loaded);
         setContentStatus('ready');
-        setSavedSiteContentSnapshot(loaded);
+        setSavedSiteContentSnapshot(persistedDraftRef.current || loaded);
         if (loaded.contact?.emailValue) {
           setProfileInfo((prev) => ({
             ...prev,
@@ -130,7 +132,9 @@ export default function App() {
         setIsAdmin(true);
         loadDraftContent().then((draft) => {
           if (draft) {
+            persistedDraftRef.current = draft;
             setDraftContent(draft);
+            setSavedSiteContentSnapshot(JSON.parse(JSON.stringify(draft)));
           }
         });
       } else {
@@ -165,7 +169,11 @@ export default function App() {
       setAdminUser(user);
       setIsAdmin(true);
       loadDraftContent().then((draft) => {
-        if (draft) setDraftContent(draft);
+        if (draft) {
+          persistedDraftRef.current = draft;
+          setDraftContent(draft);
+          setSavedSiteContentSnapshot(JSON.parse(JSON.stringify(draft)));
+        }
       });
     }
   };
@@ -178,22 +186,28 @@ export default function App() {
     setIsEditMode(false);
     setIsPreviewingDraft(false);
     setDraftContent(null);
+    persistedDraftRef.current = null;
     setHasUnsavedChanges(false);
   };
 
   // Workflow Handlers: Draft, Preview, Publish, Discard, Restore
   const handleSaveDraft = async (newContent?: SiteContent) => {
     const target = newContent || draftContent || publishedContent;
+    const revisionAtStart = editRevisionRef.current;
     setIsSaving(true);
     try {
       const saved = await saveDraftContent(target);
-      setDraftContent(saved);
+      persistedDraftRef.current = saved;
+      const changedDuringSave = editRevisionRef.current !== revisionAtStart;
+      if (!changedDuringSave) setDraftContent(saved);
       setSavedSiteContentSnapshot(JSON.parse(JSON.stringify(saved)));
-      setHasUnsavedChanges(false);
+      setHasUnsavedChanges(changedDuringSave);
       setEditStatusMessage({
         type: 'success',
         text:
-          currentLang === 'ja'
+          changedDuringSave
+            ? currentLang === 'ja' ? '下書きを保存しました。保存中の新しい変更は未保存です。' : currentLang === 'ko' ? '임시저장했습니다. 저장 중에 추가한 변경은 아직 저장되지 않았습니다.' : 'Draft saved. Newer changes made during saving are not saved yet.'
+            : currentLang === 'ja'
             ? '下書きが安全に保存されました（公開サイトにはまだ反映されていません）。'
             : currentLang === 'ko'
             ? '임시저장본(Draft)이 안전하게 저장되었습니다 (방문자에게는 아직 미공개).'
@@ -219,21 +233,26 @@ export default function App() {
 
   const handlePublish = async (newContent?: SiteContent, summary?: string) => {
     const target = newContent || draftContent || publishedContent;
+    const revisionAtStart = editRevisionRef.current;
     setIsSaving(true);
     try {
       const published = await publishContent(target, summary);
+      persistedDraftRef.current = null;
+      const changedDuringPublish = editRevisionRef.current !== revisionAtStart;
       setPublishedContent(published);
       if (published.contact?.emailValue) {
         setProfileInfo((prev) => ({ ...prev, email: published.contact.emailValue }));
       }
-      setDraftContent(null);
+      if (!changedDuringPublish) setDraftContent(null);
       setSavedSiteContentSnapshot(JSON.parse(JSON.stringify(published)));
-      setHasUnsavedChanges(false);
+      setHasUnsavedChanges(changedDuringPublish);
       setIsPreviewingDraft(false);
       setEditStatusMessage({
         type: 'success',
         text:
-          currentLang === 'ja'
+          changedDuringPublish
+            ? currentLang === 'ja' ? '公開しました。公開中の新しい変更は未保存です。' : currentLang === 'ko' ? '게시했습니다. 게시 중에 추가한 변경은 아직 저장되지 않았습니다.' : 'Published. Newer changes made during publishing are not saved yet.'
+            : currentLang === 'ja'
             ? 'サイトに正常に公開・反映されました！(Published)'
             : currentLang === 'ko'
             ? '포트폴리오에 성공적으로 게시되었습니다! 방문자에게 즉시 반영됩니다.'
@@ -260,6 +279,7 @@ export default function App() {
   const handleDiscardDraft = async () => {
     try {
       await discardDraftContent();
+      persistedDraftRef.current = null;
       setDraftContent(null);
       setSavedSiteContentSnapshot(JSON.parse(JSON.stringify(publishedContent)));
       setHasUnsavedChanges(false);
@@ -275,19 +295,14 @@ export default function App() {
       });
       setTimeout(() => setEditStatusMessage(null), 3000);
     } catch (err: any) {
-      alert(
-        currentLang === 'ja'
-          ? `エラーが発生しました: ${err.message}`
-          : currentLang === 'ko'
-          ? `오류: ${err.message}`
-          : `Error: ${err.message}`
-      );
+      throw err;
     }
   };
 
   const handleRestoreVersion = async (versionId: string) => {
     try {
       const restored = await restoreContentVersion(versionId);
+      persistedDraftRef.current = null;
       setPublishedContent(restored);
       setDraftContent(null);
       setSavedSiteContentSnapshot(JSON.parse(JSON.stringify(restored)));
@@ -303,13 +318,7 @@ export default function App() {
       });
       setTimeout(() => setEditStatusMessage(null), 4000);
     } catch (err: any) {
-      alert(
-        currentLang === 'ja'
-          ? `復元に失敗しました: ${err.message}`
-          : currentLang === 'ko'
-          ? `복원 실패: ${err.message}`
-          : `Restore failed: ${err.message}`
-      );
+      throw err;
     }
   };
 
@@ -317,16 +326,9 @@ export default function App() {
     setIsPreviewingDraft((prev) => !prev);
   };
 
-  const handleResetSiteContent = async () => {
-    const reset = await resetSiteContent();
-    setPublishedContent(reset);
-    setDraftContent(null);
-    setSavedSiteContentSnapshot(reset);
-    setHasUnsavedChanges(false);
-  };
-
   // Helper to mutate active content during inline editing (stores in draftContent)
   const updateActiveContent = (updater: (prev: SiteContent) => SiteContent) => {
+    editRevisionRef.current += 1;
     setHasUnsavedChanges(true);
     setDraftContent((prev) => {
       const base = prev || JSON.parse(JSON.stringify(publishedContent));
@@ -334,14 +336,26 @@ export default function App() {
     });
   };
 
+  // Changes made in section dialogs can exist even while inline editing is off.
+  useEffect(() => {
+    if (!isAdmin || !hasUnsavedChanges) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, [isAdmin, hasUnsavedChanges]);
+
   // Live Edit Mode controls
   const handleToggleEditMode = () => {
     if (!isAdmin) return;
     if (!isEditMode) {
       // Entering edit mode: snapshot base
-      const base = draftContent || publishedContent;
-      setSavedSiteContentSnapshot(JSON.parse(JSON.stringify(base)));
-      setHasUnsavedChanges(false);
+      if (!hasUnsavedChanges) {
+        const base = draftContent || publishedContent;
+        setSavedSiteContentSnapshot(JSON.parse(JSON.stringify(base)));
+      }
       setIsEditMode(true);
       setEditStatusMessage({
         type: 'info',
@@ -452,6 +466,18 @@ export default function App() {
       return defaultProfileInfo;
     }
   });
+
+  // The server document, including a saved draft, owns the profile values.
+  useEffect(() => {
+    const contact = activeContent.contact;
+    setProfileInfo((prev) => ({
+      ...prev,
+      name: contact.name ?? prev.name,
+      email: contact.emailValue ?? prev.email,
+      instagram: contact.instagramPlaceholder ?? prev.instagram,
+      location: contact.locationValue?.[currentLang] ?? prev.location,
+    }));
+  }, [activeContent.contact, currentLang]);
 
   // Coffee 1~4 Explanations content derived canonically from activeContent.coffee
   const currentCoffeeContent = React.useMemo<CoffeeSectionContent>(() => {
@@ -1107,15 +1133,28 @@ export default function App() {
         </div>
       )}
 
-      {/* Edit Mode Sticky Bar (Rendered ONLY when logged in as admin and edit mode is active) */}
-      {isAdmin && isEditMode && (
+      {isAdmin && !isEditMode && !hasUnsavedChanges && editStatusMessage && (
+        <div role="status" className={`sticky top-0 z-50 text-white px-4 py-2 text-xs text-center ${editStatusMessage.type === 'error' ? 'bg-red-800' : 'bg-[#294533]'}`}>
+          {editStatusMessage.text}
+        </div>
+      )}
+
+      {/* Section dialogs can create unsaved edits even when inline editing is off. */}
+      {isAdmin && (isEditMode || hasUnsavedChanges) && (
         <EditModeBar
           isEditMode={isEditMode}
           onToggleEditMode={handleToggleEditMode}
           hasUnsavedChanges={hasUnsavedChanges}
           isSaving={isSaving}
           onSave={() => handleSaveDraft()}
-          onPublish={() => handlePublish()}
+          onPublish={() => {
+            const message = currentLang === 'ja'
+              ? '現在の変更と下書き全体を公開しますか？'
+              : currentLang === 'ko'
+              ? '현재 변경사항과 임시저장 전체를 공개할까요?'
+              : 'Publish all current changes and the full draft?';
+            if (window.confirm(message)) void handlePublish();
+          }}
           onCancel={handleCancelEditMode}
           currentLang={currentLang}
           onLanguageChange={setCurrentLang}
@@ -1300,8 +1339,11 @@ export default function App() {
         }}
         onAddFoodPhoto={handleAddFoodPhoto}
         onDeleteFoodPhoto={handleDeleteFoodPhoto}
-        handDripPhotoUrl={handDripPhotoUrl}
-        onUpdateHandDripPhoto={setHandDripPhotoUrl}
+        handDripPhotoUrl={activeContent.handDripPhotoUrl !== undefined ? activeContent.handDripPhotoUrl : handDripPhotoUrl}
+        onUpdateHandDripPhoto={(url) => {
+          setHandDripPhotoUrl(url);
+          updateActiveContent((prev) => ({ ...prev, handDripPhotoUrl: url }));
+        }}
         coffeeContent={currentCoffeeContent}
         onUpdateCoffeeContent={handleUpdateCoffeeContent}
         onResetCoffeeContent={handleResetCoffeeContent}
@@ -1315,32 +1357,35 @@ export default function App() {
             email: newInfo.email === 'dhgh159030@gmail.com' ? 'dahoon0519@gmail.com' : newInfo.email,
           };
           setProfileInfo(sanitizedInfo);
-          handlePublish({
-            ...activeContent,
+          updateActiveContent((prev) => ({
+            ...prev,
             contact: {
-              ...activeContent.contact,
-              emailValue: sanitizedInfo.email,
-              name: sanitizedInfo.name,
-              locationValue: {
-                ...activeContent.contact.locationValue,
-                [currentLang]: sanitizedInfo.location,
-              },
-              instagramPlaceholder: sanitizedInfo.instagram,
+              ...prev.contact,
+              ...(sanitizedInfo.name !== profileInfo.name ? { name: sanitizedInfo.name } : {}),
+              ...(sanitizedInfo.email !== profileInfo.email
+                ? { emailValue: sanitizedInfo.email, notificationEmail: sanitizedInfo.email }
+                : {}),
+              ...(sanitizedInfo.location !== profileInfo.location
+                ? { locationValue: { ...prev.contact.locationValue, [currentLang]: sanitizedInfo.location } }
+                : {}),
+              ...(sanitizedInfo.instagram !== profileInfo.instagram
+                ? { instagramPlaceholder: sanitizedInfo.instagram }
+                : {}),
             },
-          });
+          }));
         }}
         onResetAllData={handleResetAllData}
         siteContent={activeContent}
         publishedSiteContent={publishedContent}
         draftContent={draftContent}
+        hasUnsavedChanges={hasUnsavedChanges}
         onSaveDraft={handleSaveDraft}
         onPublish={handlePublish}
         onDiscardDraft={handleDiscardDraft}
         onRestoreVersion={handleRestoreVersion}
         onPreviewToggle={handlePreviewToggle}
         isPreviewing={isPreviewingDraft}
-        onUpdateSiteContent={(content) => handlePublish(content)}
-        onResetSiteContent={handleResetSiteContent}
+        onUpdateSiteContent={(content) => updateActiveContent(() => content)}
       />
 
       {/* Quiet, Respectful Footer */}

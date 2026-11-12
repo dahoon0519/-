@@ -38,7 +38,7 @@ export const EditModeBar: React.FC<EditModeBarProps> = ({
   statusMessage,
   onDismissStatus,
 }) => {
-  if (!isEditMode) return null;
+  if (!isEditMode && !hasUnsavedChanges) return null;
 
   return (
     <div className="sticky top-0 z-50 bg-[#241E1A] text-[#FAF8F5] border-b border-[#4A3B2E] shadow-xl">
@@ -79,20 +79,16 @@ export const EditModeBar: React.FC<EditModeBarProps> = ({
           <div className="flex items-center gap-1.5 bg-amber-500/20 text-amber-300 px-2.5 py-1 rounded border border-amber-500/30 font-medium">
             <Edit3 className="w-3.5 h-3.5 animate-pulse" />
             <span>
-              {currentLang === 'ja'
-                ? '編集モード ON'
-                : currentLang === 'ko'
-                ? '편집 모드 ON'
-                : 'Edit Mode ON'}
+              {isEditMode
+                ? currentLang === 'ja' ? '編集モード ON' : currentLang === 'ko' ? '편집 모드 ON' : 'Edit Mode ON'
+                : currentLang === 'ja' ? '未保存の変更' : currentLang === 'ko' ? '저장되지 않은 변경사항' : 'Unsaved changes'}
             </span>
           </div>
 
           <span className="text-[#C7BFB2] hidden md:inline text-[11px]">
-            {currentLang === 'ja'
-              ? '画面のテキストをクリックして直接編集できます。'
-              : currentLang === 'ko'
-              ? '화면의 텍스트를 클릭하면 즉시 타이핑하여 수정할 수 있습니다.'
-              : 'Click any text on the page to edit directly.'}
+            {isEditMode
+              ? currentLang === 'ja' ? '画面のテキストをクリックして直接編集できます。' : currentLang === 'ko' ? '화면의 텍스트를 클릭하여 직접 수정할 수 있습니다.' : 'Click any text on the page to edit directly.'
+              : currentLang === 'ja' ? '下書き保存または公開を選択してください。' : currentLang === 'ko' ? '임시저장 또는 게시를 선택해주세요.' : 'Save a draft or publish your changes.'}
           </span>
 
           {/* Language Indicator in Edit Mode */}
@@ -236,7 +232,7 @@ export const EditModeBar: React.FC<EditModeBarProps> = ({
           )}
 
           {/* Close edit mode */}
-          <button
+          {isEditMode && <button
             onClick={onToggleEditMode}
             className="p-1.5 text-[#B8AF9F] hover:text-white rounded hover:bg-[#3E3328] transition-colors cursor-pointer ml-1"
             title={
@@ -248,7 +244,7 @@ export const EditModeBar: React.FC<EditModeBarProps> = ({
             }
           >
             <X className="w-4 h-4" />
-          </button>
+          </button>}
         </div>
       </div>
     </div>

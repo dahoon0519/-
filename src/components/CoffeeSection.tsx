@@ -85,7 +85,8 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
       }
     } else {
       onAddCafeVisit(savedVisit);
-      setVisitPage(Math.floor(cafeVisits.length / visitsPerPage));
+      // New visits are prepended by the parent, so reveal the first page.
+      setVisitPage(0);
     }
     setIsVisitModalOpen(false);
   };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Language, SiteContent, ContentVersion } from '../types';
+import { Language, SiteContent } from '../types';
 import {
   Save,
   RotateCcw,
@@ -25,7 +25,8 @@ import {
 } from 'lucide-react';
 import { defaultSiteContent } from '../data/defaultSiteContent';
 import {
-  getVersionHistory,
+  fetchVersionHistory,
+  ContentVersionSummary,
   validateContent,
 } from '../services/siteContentService';
 
@@ -40,7 +41,6 @@ interface SiteContentManagerProps {
   onPreviewToggle?: () => void;
   isPreviewing?: boolean;
   onSaveSiteContent: (newContent: SiteContent) => void;
-  onResetSiteContent: () => void;
   showNotify: (msg: string) => void;
   onClose?: () => void;
 }
@@ -56,7 +56,6 @@ export const SiteContentManager: React.FC<SiteContentManagerProps> = ({
   onPreviewToggle,
   isPreviewing = false,
   onSaveSiteContent,
-  onResetSiteContent,
   showNotify,
   onClose,
 }) => {
@@ -68,7 +67,9 @@ export const SiteContentManager: React.FC<SiteContentManagerProps> = ({
   >('hero');
 
   // History state
-  const [historyList, setHistoryList] = useState<ContentVersion[]>([]);
+  const [historyList, setHistoryList] = useState<ContentVersionSummary[] | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [publishSummary, setPublishSummary] = useState('');
@@ -77,8 +78,23 @@ export const SiteContentManager: React.FC<SiteContentManagerProps> = ({
   // Sync when prop updates
   useEffect(() => {
     setContent(draftContent || siteContent);
-    setHistoryList(getVersionHistory());
   }, [siteContent, draftContent]);
+
+  const refreshHistory = async () => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      setHistoryList(await fetchVersionHistory());
+    } catch (error: any) {
+      setHistoryList(null);
+      setHistoryError(error?.message || 'Could not load server history');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+  useEffect(() => {
+    if (activeSubSection === 'history') void refreshHistory();
+  }, [activeSubSection]);
 
   const hasDraft = Boolean(draftContent);
   const isDirty = JSON.stringify(content) !== JSON.stringify(draftContent || siteContent);
@@ -175,7 +191,7 @@ export const SiteContentManager: React.FC<SiteContentManagerProps> = ({
       }
       setShowPublishModal(false);
       setPublishSummary('');
-      setHistoryList(getVersionHistory());
+      if (activeSubSection === 'history') void refreshHistory();
       showNotify(
         t(
           'サイトに正常に公開・反映されました！(Published)',
@@ -234,7 +250,7 @@ export const SiteContentManager: React.FC<SiteContentManagerProps> = ({
   };
 
   // Handle Restore Version
-  const handleRestore = async (version: ContentVersion) => {
+  const handleRestore = async (version: ContentVersionSummary) => {
     const confirmMsg = t(
       `バージョン v${version.versionNumber}（${new Date(version.timestamp).toLocaleString()}）に復元しますか？`,
       `버전 v${version.versionNumber} (${new Date(version.timestamp).toLocaleString()})으로 포트폴리오를 복원하시겠습니까?`,
@@ -246,13 +262,9 @@ export const SiteContentManager: React.FC<SiteContentManagerProps> = ({
 
     setIsProcessing(true);
     try {
-      if (onRestoreVersion) {
-        await onRestoreVersion(version.id);
-      } else {
-        onSaveSiteContent(version.content);
-      }
-      setContent(version.content);
-      setHistoryList(getVersionHistory());
+      if (!onRestoreVersion) throw new Error('Server restore is unavailable');
+      await onRestoreVersion(version.id);
+      void refreshHistory();
       showNotify(
         t(
           `バージョン v${version.versionNumber}に復元しました`,
@@ -276,22 +288,20 @@ export const SiteContentManager: React.FC<SiteContentManagerProps> = ({
   // Factory Reset
   const handleFactoryReset = () => {
     const confirmMsg = t(
-      'すべてのテキストを初期の文言（工場出荷時）に戻しますか？この操作は履歴に記録されます。',
-      '모든 화면 텍스트를 기본 문구로 완전히 초기화하시겠습니까? 이 작업은 버전 기록에 안전하게 보존됩니다.',
-      'Reset all text content to factory defaults? This action will be saved in version history.'
+      '初期内容を編集画面に読み込みますか？公開中の内容は変わりません。',
+      '기본 콘텐츠를 편집 화면에 불러올까요? 현재 공개본은 변경되지 않습니다.',
+      'Load default content into the editor? The published site will not change.'
     );
     if (!confirm(confirmMsg)) {
       return;
     }
 
     setContent(defaultSiteContent);
-    onResetSiteContent();
-    setHistoryList(getVersionHistory());
     showNotify(
       t(
-        '基本テキストに復元しました',
-        '기본 텍스트로 초기화되었습니다',
-        'Reset to default text content'
+        '初期内容を読み込みました。保存するまで反映されません。',
+        '기본 콘텐츠를 불러왔습니다. 저장하기 전에는 반영되지 않습니다.',
+        'Defaults loaded in the editor. Nothing has been saved yet.'
       )
     );
   };
@@ -1705,7 +1715,11 @@ export const SiteContentManager: React.FC<SiteContentManagerProps> = ({
             </button>
           </div>
 
-          {historyList.length === 0 ? (
+          {historyLoading ? (
+            <div className="text-center py-8 text-xs">{t('サーバー履歴を読み込み中...', '서버 기록을 불러오는 중...', 'Loading server history...')}</div>
+          ) : historyError ? (
+            <div role="alert" className="text-center py-8 text-red-700 text-xs">{t('サーバー履歴を読み込めませんでした。', '서버 기록을 불러오지 못했습니다.', 'Could not load server history.')} {historyError}</div>
+          ) : historyList && historyList.length === 0 ? (
             <div className="text-center py-8 text-[#8C8477] text-xs bg-[#FAF8F5] rounded-lg border border-dashed border-[#DDD5C7]">
               {t(
                 'まだ記録されたバージョン履歴はありません。公開(Publish)を実行すると自動的にバージョンが保存されます。',
@@ -1713,7 +1727,7 @@ export const SiteContentManager: React.FC<SiteContentManagerProps> = ({
                 'No recorded versions yet. Publishing will automatically create safety snapshots here.'
               )}
             </div>
-          ) : (
+          ) : historyList ? (
             <div className="space-y-2.5">
               {historyList.map((ver) => (
                 <div
@@ -1758,7 +1772,7 @@ export const SiteContentManager: React.FC<SiteContentManagerProps> = ({
                 </div>
               ))}
             </div>
-          )}
+          ) : null}
         </div>
       )}
 
