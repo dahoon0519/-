@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FoodPhoto, Language, isVideoMedia } from '../types';
 import { translations } from '../i18n/translations';
 import { X, Upload, Check, Trash2, AlertCircle, Play } from 'lucide-react';
-import { uploadPortfolioMedia } from '../utils/mediaUpload';
+import { uploadPortfolioMedia, PORTFOLIO_MEDIA_ACCEPT, portfolioMediaHint } from '../utils/mediaUpload';
 
 interface FoodDishModalProps {
   currentLang: Language;
@@ -317,7 +317,7 @@ export const FoodDishModal: React.FC<FoodDishModalProps> = ({
                     {t.replacePhoto}
                     <input
                       type="file"
-                      accept="image/*,video/*"
+                      accept={PORTFOLIO_MEDIA_ACCEPT}
                       onChange={handleFileUpload}
                       className="hidden"
                       disabled={isProcessingMedia}
@@ -343,17 +343,17 @@ export const FoodDishModal: React.FC<FoodDishModalProps> = ({
                       ? '이미지 압축 처리 중...'
                       : 'Processing media...'
                     : currentLang === 'ja'
-                    ? '写真または動画ファイルを選択 (最大20MB)'
+                    ? '写真または動画ファイルを選択'
                     : currentLang === 'ko'
-                    ? '사진이나 동영상 파일 선택 (최대 20MB)'
-                    : 'Choose photo or video file (Max 20MB)'}
+                    ? '사진이나 동영상 파일 선택'
+                    : 'Choose a photo or video'}
                 </span>
                 <span className="text-[11px] text-[#8A8377] mt-0.5">
-                  JPG, PNG, WebP, SVG, MP4, MOV
+                  {portfolioMediaHint(currentLang)}
                 </span>
                 <input
                   type="file"
-                  accept="image/*,video/*"
+                  accept={PORTFOLIO_MEDIA_ACCEPT}
                   onChange={handleFileUpload}
                   className="hidden"
                   disabled={isProcessingMedia}

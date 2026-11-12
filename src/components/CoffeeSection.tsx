@@ -85,7 +85,8 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
       }
     } else {
       onAddCafeVisit(savedVisit);
-      setVisitPage(Math.floor(cafeVisits.length / visitsPerPage));
+      // New visits are prepended by the parent, so reveal the first page.
+      setVisitPage(0);
     }
     setIsVisitModalOpen(false);
   };
@@ -466,6 +467,17 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
                 const displayProcessing = visit.processingMethodI18n?.[currentLang] || visit.processingMethod;
                 const displayBrewing = visit.brewingMethodI18n?.[currentLang] || visit.brewingMethod;
                 const displayImpressions = visit.personalImpressionsI18n?.[currentLang] || visit.personalImpressions;
+                const handleOpenVisitPhoto = () => {
+                  if (!onOpenPhoto || !visit.imageUrl) return;
+                  onOpenPhoto({
+                    id: visit.id,
+                    title: displayName,
+                    description: displayNotes || displayImpressions || '',
+                    imageUrl: visit.imageUrl,
+                    mediaType: visit.mediaType || (isVideoMedia(visit.imageUrl) ? 'video' : 'image'),
+                    type: displayCoffee,
+                  });
+                };
 
                 return (
                   <div key={visit.id} className="py-5 first:pt-4 last:pb-0 group/item">
@@ -473,19 +485,17 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
                       {/* Photo Thumbnail if exists */}
                       {visit.imageUrl && (
                         <div
-                          onClick={() => {
-                            if (onOpenPhoto && visit.imageUrl) {
-                              onOpenPhoto({
-                                id: visit.id,
-                                title: displayName,
-                                description: displayNotes || displayImpressions || '',
-                                imageUrl: visit.imageUrl,
-                                mediaType: visit.mediaType || (isVideoMedia(visit.imageUrl) ? 'video' : 'image'),
-                                type: displayCoffee,
-                              });
+                          role={onOpenPhoto ? 'button' : undefined}
+                          tabIndex={onOpenPhoto ? 0 : undefined}
+                          aria-label={onOpenPhoto ? (currentLang === 'ja' ? `${displayName}を開く` : currentLang === 'ko' ? `${displayName} 열기` : `Open ${displayName}`) : undefined}
+                          onClick={handleOpenVisitPhoto}
+                          onKeyDown={(event) => {
+                            if (onOpenPhoto && visit.imageUrl && (event.key === 'Enter' || event.key === ' ')) {
+                              event.preventDefault();
+                              handleOpenVisitPhoto();
                             }
                           }}
-                          className="w-24 h-24 sm:w-28 sm:h-28 rounded-md overflow-hidden bg-[#EFEAE2] shrink-0 border border-[#DDD5C8] cursor-pointer relative group/thumb shadow-xs"
+                          className="w-24 h-24 sm:w-28 sm:h-28 rounded-md overflow-hidden bg-[#EFEAE2] shrink-0 border border-[#DDD5C8] cursor-pointer relative group/thumb shadow-xs focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#87664B]"
                         >
                           {isVideoMedia(visit.imageUrl, visit.mediaType) ? (
                             <video

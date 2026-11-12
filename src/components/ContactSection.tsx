@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Language, ProfileInfo, SiteContent } from '../types';
 import {
   Mail,
@@ -32,6 +32,12 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   onUpdateContactText,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
+  const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
+  }, []);
 
   // Form states
   const [senderName, setSenderName] = useState('');
@@ -59,10 +65,17 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   const currentInstagram =
     siteContact.instagramPlaceholder ?? profileInfo?.instagram ?? '';
 
-  const handleCopyEmail = () => {
-    navigator.clipboard.writeText(targetEmail);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+  const handleCopyEmail = async () => {
+    if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
+    setCopied(false);
+    setCopyError(false);
+    try {
+      await navigator.clipboard.writeText(targetEmail);
+      setCopied(true);
+      copyResetTimer.current = setTimeout(() => setCopied(false), 2500);
+    } catch {
+      setCopyError(true);
+    }
   };
 
   const handleSubmitInquiry = async (e: React.FormEvent) => {
@@ -255,6 +268,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                     <button
                       type="button"
                       onClick={handleCopyEmail}
+                      aria-live="polite"
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs text-[#524B43] hover:text-[#1F1E1D] bg-[#F2EDE4] hover:bg-[#E8E1D4] active:bg-[#DFD7C8] rounded cursor-pointer transition-colors shrink-0 ml-auto sm:ml-0 font-medium"
                       title={siteContact.copyEmail[currentLang] || siteContact.copyEmail['ja']}
                     >
@@ -271,6 +285,15 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                       )}
                     </button>
                   </div>
+                  {copyError && (
+                    <p role="status" className="mt-2 text-xs text-[#8A3B32]">
+                      {currentLang === 'ja'
+                        ? 'コピーできませんでした。メールアドレスを選択してコピーしてください。'
+                        : currentLang === 'ko'
+                        ? '복사하지 못했어요. 이메일 주소를 직접 선택해 복사해 주세요.'
+                        : 'Could not copy. Please select and copy the email address.'}
+                    </p>
+                  )}
                 </div>
 
                 {/* Location Preference */}

@@ -457,10 +457,18 @@ apiRouter.post('/content/publish', requireAdminAuth, async (req: AuthenticatedRe
     const updatedHistory = [versionSnapshot, ...existingHistory].slice(0, 15);
     await portfolioStorage.setVersionHistory(updatedHistory);
 
+    // The client already has the submitted document. Returning it twice (as
+    // both `published` and `version.content`) can exceed Netlify's buffered
+    // response limit after the write has succeeded, causing a misleading 502.
     return res.json({
       success: true,
-      published,
-      version: versionSnapshot,
+      version: {
+        id: versionSnapshot.id,
+        versionNumber: versionSnapshot.versionNumber,
+        timestamp: versionSnapshot.timestamp,
+        author: versionSnapshot.author,
+        summary: versionSnapshot.summary,
+      },
     });
   } catch (err: any) {
     return res.status(503).json({
@@ -470,28 +478,62 @@ apiRouter.post('/content/publish', requireAdminAuth, async (req: AuthenticatedRe
   }
 });
 
-/**
- * Server-backed portfolio document backup. Authenticated administrator only.
- * Inquiries (personal data) and media binary files are intentionally excluded.
- * Every media URL remains in the exported SiteContent documents.
- */
-apiRouter.get('/content/backups/export', requireAdminAuth, async (_req: AuthenticatedRequest, res: Response) => {
-  res.setHeader('Cache-Control', 'no-store');
-  try {
-    const [published, draft, history] = await Promise.all([
-      portfolioStorage.getPublishedContent(),
-      portfolioStorage.getDraftContent(),
-      portfolioStorage.getVersionHistory(),
-    ]);
-    return res.json({
+/** Server documents keep external media references; inquiries are excluded. */
+async function readBackupExport(exportedAt: string) {
+  const [published, draft, history] = await Promise.all([
+    portfolioStorage.getPublishedContent(),
+    portfolioStorage.getDraftContent(),
+    portfolioStorage.getVersionHistory(),
+  ]);
+  return {
       format: 'dahoon-portfolio-documents',
       version: 1,
-      exportedAt: new Date().toISOString(),
+      exportedAt,
       published,
       draft,
       history,
       media: 'references-only',
       inquiries: 'excluded',
+  };
+}
+
+// Keep the existing endpoint for clients that export small documents.
+apiRouter.get('/content/backups/export', requireAdminAuth, async (_req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    return res.json(await readBackupExport(new Date().toISOString()));
+  } catch (error: any) {
+    return res.status(503).json({ error: 'Backup export unavailable', details: error.message });
+  }
+});
+
+// Keep each buffered Function response comfortably under the 6 MB limit.
+// Every part rechecks the complete document hash, so changes between requests
+// fail closed instead of silently combining different versions.
+apiRouter.get('/content/backups/export-part', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const partText = typeof req.query.part === 'string' ? req.query.part : '';
+  const exportedAt = typeof req.query.exportedAt === 'string' ? req.query.exportedAt : '';
+  const expectedHash = typeof req.query.hash === 'string' ? req.query.hash : '';
+  if (!/^\d{1,8}$/.test(partText)) return res.status(400).json({ error: 'Invalid backup part' });
+  const part = Number(partText);
+  if (part > 0 && (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(exportedAt) || !/^[0-9a-f]{64}$/.test(expectedHash))) {
+    return res.status(400).json({ error: 'Missing backup snapshot information' });
+  }
+  try {
+    const timestamp = part === 0 ? new Date().toISOString() : exportedAt;
+    const bytes = Buffer.from(JSON.stringify(await readBackupExport(timestamp)), 'utf8');
+    const hash = crypto.createHash('sha256').update(bytes).digest('hex');
+    if (part > 0 && hash !== expectedHash) {
+      return res.status(409).json({ error: 'Backup changed during export. Please try again.' });
+    }
+    const chunkBytes = 2 * 1024 * 1024;
+    const totalParts = Math.max(1, Math.ceil(bytes.length / chunkBytes));
+    if (part >= totalParts) return res.status(416).json({ error: 'Backup part is out of range' });
+    return res.json({
+      format: 'dahoon-portfolio-documents-part', version: 1,
+      part, totalParts, totalBytes: bytes.length, hash, exportedAt: timestamp,
+      data: bytes.subarray(part * chunkBytes, (part + 1) * chunkBytes).toString('base64'),
     });
   } catch (error: any) {
     return res.status(503).json({ error: 'Backup export unavailable', details: error.message });
@@ -571,6 +613,16 @@ apiRouter.post('/content/backups/import-draft', requireAdminAuth, async (req: Au
  * GET /api/content/history
  * Admin-only endpoint: retrieves version history snapshots.
  */
+apiRouter.get('/content/history/summary', requireAdminAuth, async (_req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const history = await portfolioStorage.getVersionHistory();
+    return res.json({ history: history.map(({ id, versionNumber, timestamp, author, summary }) => ({ id, versionNumber, timestamp, author, summary })) });
+  } catch (error: any) {
+    return res.status(503).json({ error: 'Could not read version history', details: error.message });
+  }
+});
+
 apiRouter.get('/content/history', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const history = await portfolioStorage.getVersionHistory();

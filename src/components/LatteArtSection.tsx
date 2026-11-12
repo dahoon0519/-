@@ -190,7 +190,16 @@ export const LatteArtSection: React.FC<LatteArtSectionProps> = ({
                 {/* Photo / Video Area */}
                 <div
                   onClick={() => onOpenPhoto(item)}
-                  className="aspect-square bg-[#F1ECE3] overflow-hidden cursor-pointer relative"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={currentLang === 'ja' ? `${displayTitle}を開く` : currentLang === 'ko' ? `${displayTitle} 열기` : `Open ${displayTitle}`}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onOpenPhoto(item);
+                    }
+                  }}
+                  className="aspect-square bg-[#F1ECE3] overflow-hidden cursor-pointer relative focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#87664B]"
                 >
                   {isVideoMedia(item.imageUrl, item.mediaType) ? (
                     <video

@@ -137,7 +137,16 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
           {/* Main Photo Container */}
           <div
             onClick={handleHeroClick}
-            className="aspect-square sm:aspect-[4/3] rounded-lg overflow-hidden bg-[#F0EBE1] border border-[#E5DFD4] shadow-sm cursor-pointer transition-all duration-300 hover:shadow-md relative"
+            role="button"
+            tabIndex={0}
+            aria-label={currentLang === 'ja' ? `${caption.title}を開く` : currentLang === 'ko' ? `${caption.title} 열기` : `Open ${caption.title}`}
+            onKeyDown={(event) => {
+              if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                event.preventDefault();
+                handleHeroClick();
+              }
+            }}
+            className="aspect-square sm:aspect-[4/3] rounded-lg overflow-hidden bg-[#F0EBE1] border border-[#E5DFD4] shadow-sm cursor-pointer transition-all duration-300 hover:shadow-md relative focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#87664B]"
           >
             {isVideoMedia(heroPhoto.imageUrl, heroPhoto.mediaType) ? (
               <video

@@ -160,6 +160,15 @@ try {
   assert.equal(res.data.history.length, 2);
   pass('Version restore recovers original media, coffee records and published text');
 
+  res = await request('GET', '/api/content/history/summary', undefined, {});
+  assert.equal(res.status, 401);
+  res = await request('GET', '/api/content/history/summary');
+  assert.equal(res.status, 200);
+  assert.equal(res.data.history.length, 2);
+  assert.ok(res.data.history.some((item: any) => item.id === firstVersionId));
+  assert.ok(res.data.history.every((item: any) => item.content === undefined));
+  pass('Version list uses authenticated server IDs without sending large snapshots');
+
   // Server backup endpoints must be protected; no backend content is changed
   // when non-admin visitors attempt to export or restore documents.
   res = await request('GET', '/api/content/backups/export', undefined, {});
@@ -235,6 +244,35 @@ try {
   assert.equal(stored.history.length, 2);
   assert.ok(stored.safetyBackups.length >= 5);
   pass('All writes are contained within the ephemeral test directory');
+
+  // Reproduce a content document similar in size to one with legacy inline
+  // images. Publish must preserve every byte without echoing the document
+  // twice and exceeding the hosted function's response-size limit.
+  const largeContent = structuredClone(initial);
+  const largeImage = 'data:image/jpeg;base64,' + 'A'.repeat(4_400_000);
+  (largeContent.cafeVisits[0] as any).imageUrl = largeImage;
+  const oldResponse = JSON.stringify({ success: true, published: largeContent, version: { content: largeContent } });
+  assert.ok(Buffer.byteLength(oldResponse, 'utf8') > 6 * 1024 * 1024, 'Fixture must reproduce the oversized response');
+  res = await request('POST', '/api/content/draft', { content: largeContent });
+  assert.equal(res.status, 200);
+  const largePublish = await fetch(base + '/api/content/publish', {
+    method: 'POST', headers,
+    body: JSON.stringify({ content: largeContent, summary: 'Local large-document test' }),
+  });
+  assert.equal(largePublish.status, 200);
+  const responseBody = await largePublish.text();
+  assert.ok(Buffer.byteLength(responseBody, 'utf8') < 4096, 'Publish response must not duplicate large content');
+  const responseData = JSON.parse(responseBody);
+  assert.equal(responseData.success, true);
+  assert.ok(responseData.version.id);
+  assert.equal(responseData.version.content, undefined);
+  res = await request('GET', '/api/content/published');
+  assert.equal(res.data.published.cafeVisits[0].imageUrl, largeImage);
+  assert.deepEqual(res.data.published.lattePhotos, initial.lattePhotos);
+  assert.deepEqual(res.data.published.foodPhotos, initial.foodPhotos);
+  res = await request('GET', '/api/content/history');
+  assert.equal(res.data.history[0].content.cafeVisits[0].imageUrl, largeImage);
+  pass('Large synthetic publish returns compact response while preserving media and history');
   console.log('All authenticated LOCAL Draft/Publish/Restore HTTP integration tests passed.');
 } finally {
   if (httpServer) await new Promise<void>(resolve => httpServer.close(() => resolve()));
