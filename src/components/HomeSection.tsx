@@ -127,7 +127,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
               onChange={(val) => onUpdateHeroField?.('subtext', val)}
               as="p"
               multiline
-              className="text-xs sm:text-sm text-[#7D766C] max-w-lg mx-auto leading-relaxed block"
+              className="text-xs sm:text-sm text-[#7D766C] max-w-lg mx-auto leading-relaxed whitespace-pre-line block"
             />
           </div>
         </div>
