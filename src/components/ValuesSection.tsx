@@ -76,7 +76,7 @@ export const ValuesSection: React.FC<ValuesSectionProps> = ({
                   onChange={(newDesc) => onUpdateValuesText?.('itemDesc', newDesc, idx)}
                   as="p"
                   multiline
-                  className="text-sm text-[#544E45] leading-relaxed block"
+                  className="text-sm text-[#544E45] leading-relaxed whitespace-pre-line block"
                 />
               </div>
             </div>
