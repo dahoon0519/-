@@ -189,7 +189,7 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
                 onChange={(val) => onUpdateCoffeeText?.('espresso.body', val)}
                 as="p"
                 multiline
-                className="text-sm text-[#544E45] leading-relaxed mb-4 block"
+                className="text-sm text-[#544E45] leading-relaxed whitespace-pre-line mb-4 block"
               />
             </div>
 
@@ -245,7 +245,7 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
                 onChange={(val) => onUpdateCoffeeText?.('sensory.body', val)}
                 as="p"
                 multiline
-                className="text-sm text-[#544E45] leading-relaxed mb-4 block"
+                className="text-sm text-[#544E45] leading-relaxed whitespace-pre-line mb-4 block"
               />
             </div>
 
@@ -298,7 +298,7 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
                   onChange={(val) => onUpdateCoffeeText?.('handDrip.body', val)}
                   as="p"
                   multiline
-                  className="text-sm text-[#544E45] leading-relaxed block"
+                  className="text-sm text-[#544E45] leading-relaxed whitespace-pre-line block"
                 />
               </div>
 
