@@ -1,3 +1,4 @@
+import { PageLabel, usePageCopy } from './PageCopy';
 import { uploadPortfolioMedia } from '../utils/mediaUpload';
 import React, { useState } from 'react';
 import {
@@ -58,6 +59,7 @@ export const FoodSection: React.FC<FoodSectionProps> = ({
   isEditMode = false,
   onUpdateFoodText,
 }) => {
+  const copy = usePageCopy(currentLang);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [isDishModalOpen, setIsDishModalOpen] = useState(false);
   const [dishToEdit, setDishToEdit] = useState<FoodPhoto | null>(null);
@@ -132,7 +134,7 @@ export const FoodSection: React.FC<FoodSectionProps> = ({
         <div className="mb-14 sm:mb-18 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div>
             <p className="text-xs tracking-[0.2em] text-[#8F887C] uppercase font-sans-jp mb-2">
-              Food & Kitchen
+              <PageLabel name="food.eyebrow" lang={currentLang} />
             </p>
             <EditableText
               isEditMode={isEditMode}
@@ -261,11 +263,7 @@ export const FoodSection: React.FC<FoodSectionProps> = ({
                 }`}
               >
                 {cat === 'All'
-                  ? currentLang === 'ja'
-                    ? 'すべて'
-                    : currentLang === 'ko'
-                    ? '전체 요리'
-                    : 'All'
+                  ? copy('food.all')
                   : cat}
               </button>
             ))}
@@ -273,7 +271,7 @@ export const FoodSection: React.FC<FoodSectionProps> = ({
 
           <span className="text-xs text-[#8A8377] font-mono">
             {filteredPhotos.length}{' '}
-            {currentLang === 'ja' ? '品' : currentLang === 'ko' ? '개 메뉴' : 'items'}
+            {copy('food.items')}
           </span>
         </div>
 
@@ -335,11 +333,7 @@ export const FoodSection: React.FC<FoodSectionProps> = ({
                       {displayIngredients && (
                         <div className="text-[#595247] leading-relaxed">
                           <span className="font-medium text-[#38332C]">
-                            {currentLang === 'ja'
-                              ? '主な食材: '
-                              : currentLang === 'ko'
-                              ? '주요 재료: '
-                              : 'Ingredients: '}
+                            {copy('food.ingredients')}
                           </span>
                           {displayIngredients}
                         </div>
@@ -347,11 +341,7 @@ export const FoodSection: React.FC<FoodSectionProps> = ({
                       {displayPrep && (
                         <div className="text-[#595247] leading-relaxed">
                           <span className="font-medium text-[#38332C]">
-                            {currentLang === 'ja'
-                              ? '仕込み・発酵: '
-                              : currentLang === 'ko'
-                              ? '준비 및 발효: '
-                              : 'Prep: '}
+                            {copy('food.prep')}
                           </span>
                           {displayPrep}
                         </div>
@@ -359,11 +349,7 @@ export const FoodSection: React.FC<FoodSectionProps> = ({
                       {displayTechniques && (
                         <div className="text-[#595247] leading-relaxed">
                           <span className="font-medium text-[#38332C]">
-                            {currentLang === 'ja'
-                              ? '調理技法・火入れ: '
-                              : currentLang === 'ko'
-                              ? '조리 기술·화력: '
-                              : 'Technique: '}
+                            {copy('food.technique')}
                           </span>
                           {displayTechniques}
                         </div>
@@ -403,7 +389,7 @@ export const FoodSection: React.FC<FoodSectionProps> = ({
                       <button
                         onClick={() => handleDishClick(item)}
                         className="absolute top-2 left-2 bg-black/60 hover:bg-black/80 text-white p-1.5 rounded cursor-pointer opacity-0 group-hover/media:opacity-100 transition-opacity"
-                        title="Enlarge"
+                        title={copy('food.enlarge')}
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </button>
@@ -412,7 +398,7 @@ export const FoodSection: React.FC<FoodSectionProps> = ({
                       {isVideoMedia(item.imageUrl, item.mediaType) && (
                         <span className="absolute top-2 right-2 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1 pointer-events-none">
                           <VideoIcon className="w-3 h-3 text-amber-300" />
-                          <span>VIDEO</span>
+                          <span>{copy('food.videoBadge')}</span>
                         </span>
                       )}
 

@@ -102,7 +102,7 @@ async function getNetlifyBlobStore() {
   try {
     const { getStore } = await import('@netlify/blobs');
     const namespace = getPortfolioStorageNamespace();
-    return getStore(namespace ? `portfolio-content-${namespace}` : 'portfolio-content');
+    return getStore({ name: namespace ? `portfolio-content-${namespace}` : 'portfolio-content', consistency: 'strong' });
   } catch (err: any) {
     if (isProductionEnvironment()) {
       throw new Error(`Failed to initialize Netlify Blobs in production: ${err?.message}`);

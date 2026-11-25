@@ -1,3 +1,4 @@
+import { PageLabel, usePageCopy } from './PageCopy';
 import React from 'react';
 import { Language, SiteContent } from '../types';
 import { translations } from '../i18n/translations';
@@ -20,6 +21,7 @@ export const ExperienceSection: React.FC<ExperienceSectionProps> = ({
   isEditMode = false,
   onUpdateExperienceText,
 }) => {
+  const copy = usePageCopy(currentLang);
   const t = translations[currentLang];
 
   const title = siteExperience?.title[currentLang] || t.experience.title;
@@ -37,7 +39,7 @@ export const ExperienceSection: React.FC<ExperienceSectionProps> = ({
         {/* Header */}
         <div className="mb-14 sm:mb-18">
           <p className="text-xs tracking-[0.2em] text-[#8F887C] uppercase font-sans-jp mb-2">
-            Experience & Career
+            <PageLabel name="experience.eyebrow" lang={currentLang} />
           </p>
           <EditableText
             isEditMode={isEditMode}

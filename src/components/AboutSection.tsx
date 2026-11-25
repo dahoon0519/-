@@ -1,3 +1,4 @@
+import { PageLabel, usePageCopy } from './PageCopy';
 import React from 'react';
 import { Language, SiteContent } from '../types';
 import { translations } from '../i18n/translations';
@@ -16,6 +17,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
   isEditMode = false,
   onUpdateAboutField,
 }) => {
+  const copy = usePageCopy(currentLang);
   const t = translations[currentLang];
 
   const title = siteAbout?.title[currentLang] || t.about.title;
@@ -66,7 +68,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
         {/* Section Header */}
         <div className="mb-14 sm:mb-18">
           <p className="text-xs tracking-[0.2em] text-[#8F887C] uppercase font-sans-jp mb-2">
-            About Me
+            <PageLabel name="about.eyebrow" lang={currentLang} />
           </p>
           <EditableText
             isEditMode={isEditMode}
@@ -103,7 +105,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
                   onChange={(val) => onUpdateAboutField?.(story.fieldBody, val)}
                   as="p"
                   multiline
-                  className="text-sm sm:text-[15px] text-[#544E45] leading-relaxed sm:leading-loose block whitespace-pre-line"
+                  className="text-base text-[#544E45] leading-[1.85] block whitespace-pre-line"
                 />
               </div>
             </article>
@@ -113,7 +115,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
         {/* Closing Thought */}
         {(closing?.trim() || isEditMode) && (
           <div className="mt-16 sm:mt-20 pt-10 border-t border-[#EDE7DD] text-center">
-            <span className="font-serif-jp text-base sm:text-lg text-[#3B362F] italic tracking-wide leading-relaxed">
+            <span className="font-serif-jp text-base sm:text-lg text-[#3B362F] tracking-wide leading-relaxed">
               {closing?.trim() ? '「' : ''}
               <EditableText
                 isEditMode={isEditMode}

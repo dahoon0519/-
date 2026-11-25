@@ -1,3 +1,5 @@
+import { PageCopyContext, PageLabelEditor } from './components/PageCopy';
+import { resolvePageCopy } from './data/pageCopy';
 import React, { useState, useEffect } from 'react';
 import {
   Language,
@@ -220,10 +222,10 @@ export default function App() {
         type: 'error',
         text:
           currentLang === 'ja'
-            ? `下書き保存に失敗しました: ${err.message || 'Error'}`
+            ? `下書き保存を確認できませんでした: ${err.message || 'Error'}`
             : currentLang === 'ko'
-            ? `임시저장 실패: ${err.message || 'Error'}`
-            : `Failed to save draft: ${err.message || 'Error'}`,
+            ? `임시저장 확인 실패: ${err.message || 'Error'}`
+            : `Could not confirm draft: ${err.message || 'Error'}`,
       });
       return false;
     } finally {
@@ -255,7 +257,7 @@ export default function App() {
             : currentLang === 'ja'
             ? 'サイトに正常に公開・反映されました！(Published)'
             : currentLang === 'ko'
-            ? '포트폴리오에 성공적으로 게시되었습니다! 방문자에게 즉시 반영됩니다.'
+            ? '방문자용 데이터에서 게시본을 확인했습니다.'
             : 'Portfolio successfully published live to all visitors!',
       });
       setTimeout(() => setEditStatusMessage(null), 4500);
@@ -265,9 +267,9 @@ export default function App() {
         type: 'error',
         text:
           currentLang === 'ja'
-            ? `公開に失敗しました: ${err.message || 'Error'}`
+            ? `公開を確認できませんでした: ${err.message || 'Error'}`
             : currentLang === 'ko'
-            ? `게시 실패: ${err.message || 'Error'}`
+            ? `게시 확인 실패: ${err.message || 'Error'}`
             : `Publish failed: ${err.message || 'Error'}`,
       });
       return false;
@@ -1102,6 +1104,10 @@ export default function App() {
   }
 
   return (
+    <PageLabelEditor.Provider value={isAdmin && isEditMode ? (key, value) => updateActiveContent(prev => ({
+      ...prev, pageCopy: { ...prev.pageCopy, [key]: { ...prev.pageCopy?.[key], [currentLang]: value } }
+    })) : null}>
+    <PageCopyContext.Provider value={activeContent.pageCopy}>
     <div className="min-h-screen bg-[#FAF8F5] text-[#2C2926] font-sans-jp flex flex-col selection:bg-[#E4DED4] selection:text-[#1F1E1D]">
       {/* Admin Draft Preview Notification Banner */}
       {isAdmin && isPreviewingDraft && (
@@ -1200,6 +1206,10 @@ export default function App() {
           onOpenAdmin={() => setIsAdminModalOpen(true)}
           siteHero={activeContent.hero}
           isEditMode={isAdmin && isEditMode}
+          onCaptionChange={(field, value) => updateActiveContent(prev => {
+            const media = prev.heroPhoto || heroPhoto;
+            return { ...prev, heroPhoto: { ...media, [field]: { ...media[field], [currentLang]: value } } };
+          })}
           onUpdateHeroField={handleUpdateHeroField}
         />
 
@@ -1412,7 +1422,7 @@ export default function App() {
             </div>
           )}
           <div className="pt-2 flex items-center justify-center gap-3 text-[11px] text-[#A69F93]">
-            <span>© {new Date().getFullYear()} {profileInfo.name}. All Rights Reserved.</span>
+            <span>{resolvePageCopy(activeContent.pageCopy, 'footer.copyright', currentLang).replace(/\{year\}|\{name\}/g, token => token === '{year}' ? String(new Date().getFullYear()) : profileInfo.name)}</span>
           </div>
         </div>
       </footer>
@@ -1476,6 +1486,8 @@ export default function App() {
         </div>
       )}
     </div>
+    </PageCopyContext.Provider>
+    </PageLabelEditor.Provider>
   );
 }
 

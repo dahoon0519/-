@@ -1,3 +1,4 @@
+import { PageLabel, usePageCopy } from './PageCopy';
 import { uploadPortfolioMedia } from '../utils/mediaUpload';
 import React, { useRef, useState } from 'react';
 import { Language, HeroPhotoInfo, LatteArtPhoto, isVideoMedia, SiteContent } from '../types';
@@ -13,6 +14,7 @@ interface HomeSectionProps {
   isAdmin: boolean;
   onChangeHeroPhoto: (fileUrl: string, mediaType?: 'image' | 'video') => Promise<void> | void;
   onOpenAdmin: () => void;
+  onCaptionChange: (field: 'titleI18n' | 'descriptionI18n' | 'typeI18n', value: string) => void;
   siteHero?: SiteContent['hero'];
   isEditMode?: boolean;
   onUpdateHeroField?: (field: 'name' | 'title' | 'subtext', value: string) => void;
@@ -28,14 +30,15 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
   siteHero,
   isEditMode = false,
   onUpdateHeroField,
+  onCaptionChange,
 }) => {
+  const copy = usePageCopy(currentLang);
   const t = translations[currentLang];
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isHeroUploading, setIsHeroUploading] = useState(false);
 
   const heroName = siteHero?.name || t.hero.name;
   const heroTitle = siteHero?.title[currentLang] || t.hero.title;
-  const heroKeywords = siteHero?.keywords[currentLang] || t.hero.keywords;
   const heroSubtext = siteHero?.subtext[currentLang] || t.hero.subtext;
   const caption = heroCaption(heroPhoto, currentLang);
 
@@ -85,7 +88,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
         {/* Simple & Dignified Header as requested */}
         <div className="text-center space-y-4 mb-10 sm:mb-14">
           <p className="text-xs tracking-[0.25em] text-[#8F887C] uppercase font-sans-jp">
-            Portfolio
+            <PageLabel name="hero.eyebrow" lang={currentLang} />
           </p>
 
           <div>
@@ -108,18 +111,6 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
             />
           </div>
 
-          {/* 4 Pillars: コーヒー · ラテアート · 料理 · サービス */}
-          <div className="flex flex-wrap items-center justify-center gap-y-2 gap-x-4 pt-2 text-xs sm:text-sm text-[#736C62] tracking-widest font-sans-jp">
-            {heroKeywords.map((kw, i) => (
-              <React.Fragment key={`pillar-${i}`}>
-                <span className="hover:text-[#1C1A19] transition-colors">{kw}</span>
-                {i < heroKeywords.length - 1 && (
-                  <span className="text-[#CCC4B6] select-none">·</span>
-                )}
-              </React.Fragment>
-            ))}
-          </div>
-
           <div className="pt-2">
             <EditableText
               isEditMode={isEditMode}
@@ -139,7 +130,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
             onClick={handleHeroClick}
             role="button"
             tabIndex={0}
-            aria-label={currentLang === 'ja' ? `${caption.title}を開く` : currentLang === 'ko' ? `${caption.title} 열기` : `Open ${caption.title}`}
+            aria-label={copy('hero.openMedia').replaceAll('{title}', () => caption.title)}
             onKeyDown={(event) => {
               if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
                 event.preventDefault();
@@ -169,9 +160,9 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
 
             {/* Video indicator badge if video */}
             {isVideoMedia(heroPhoto.imageUrl, heroPhoto.mediaType) && (
-              <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-xs text-white text-[11px] px-2 py-0.5 rounded flex items-center gap-1.5 font-mono">
+              <div className="absolute bottom-3 left-3 bg-black/75 backdrop-blur-xs text-white text-sm px-4 py-2 rounded flex items-center gap-1.5 font-mono">
                 <Play className="w-3 h-3 fill-current" />
-                <span>VIDEO</span>
+                <span>{copy('hero.videoBadge')}</span>
               </div>
             )}
 
@@ -180,16 +171,8 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
               <Eye className="w-4 h-4" />
               <span>
                 {isVideoMedia(heroPhoto.imageUrl, heroPhoto.mediaType)
-                  ? currentLang === 'ja'
-                    ? '動画を全画面で再生'
-                    : currentLang === 'ko'
-                    ? '동영상 전체화면 재생'
-                    : 'Play Fullscreen Video'
-                  : currentLang === 'ja'
-                  ? '写真を拡大して見る'
-                  : currentLang === 'ko'
-                  ? '사진 크게 보기'
-                  : 'View Full Image'}
+                  ? copy('hero.playFullscreenVideo')
+                  : copy('hero.viewFullImage')}
               </span>
             </div>
 
@@ -230,12 +213,13 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
           {/* Caption */}
           <div className="mt-3 flex items-center justify-between text-xs text-[#807A70] px-1">
             <span className="font-serif-jp text-[#4A453D] font-medium">
-              {caption.title}
+              <EditableText isEditMode={isEditMode} value={caption.title} onChange={value => onCaptionChange('titleI18n', value)} />
             </span>
-            <span>{caption.type}</span>
+            <EditableText isEditMode={isEditMode} value={caption.type} onChange={value => onCaptionChange('typeI18n', value)} />
           </div>
         </div>
 
+        {(caption.description || isEditMode) && <EditableText as="p" multiline className="mt-3 mx-auto max-w-2xl text-sm leading-relaxed" isEditMode={isEditMode} value={caption.description} onChange={value => onCaptionChange('descriptionI18n', value)} />}
         {/* Quiet scroll indicator */}
         <div className="text-center pt-12">
           <button
@@ -243,7 +227,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
             className="inline-flex flex-col items-center text-xs text-[#8F887C] hover:text-[#2A2621] transition-colors cursor-pointer group"
           >
             <span className="tracking-wider text-[11px] mb-1 font-serif-jp">
-              {t.nav.about}
+              {copy('hero.aboutLink')}
             </span>
             <ChevronDown className="w-4 h-4 animate-bounce text-[#B0A89A] group-hover:text-[#4A443A]" />
           </button>

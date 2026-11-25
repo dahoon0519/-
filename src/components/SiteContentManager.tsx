@@ -1,3 +1,4 @@
+import { pageCopyDefaults, resolvePageCopy, type PageCopyKey } from '../data/pageCopy';
 import React, { useState, useEffect } from 'react';
 import { Language, SiteContent } from '../types';
 import {
@@ -533,6 +534,27 @@ export const SiteContentManager: React.FC<SiteContentManagerProps> = ({
           })}
         </div>
       </div>
+
+      {activeSubSection !== 'history' && (
+        <div className="grid gap-3">
+          {(Object.keys(pageCopyDefaults) as PageCopyKey[]).filter(key => {
+            const section = key.split('.')[0];
+            return section === activeSubSection || (activeSubSection === 'hero' && section === 'header')
+              || (activeSubSection === 'latteArt' && section === 'viewer');
+          }).map(key => (
+            <label key={key} className="grid gap-1 text-xs">
+              <span>{pageCopyDefaults[key][currentLang]} ({editLang.toUpperCase()})</span>
+              <textarea value={resolvePageCopy(content.pageCopy, key, editLang)}
+                onChange={event => {
+                  const value = event.target.value;
+                  setContent(prev => ({ ...prev, pageCopy: { ...prev.pageCopy,
+                    [key]: { ...prev.pageCopy?.[key], [editLang]: value } } }));
+                }}
+                className="rounded border p-2" rows={2} />
+            </label>
+          ))}
+        </div>
+      )}
 
       {/* SUB-SECTION 1: HERO */}
       {activeSubSection === 'hero' && (
@@ -1628,6 +1650,33 @@ export const SiteContentManager: React.FC<SiteContentManagerProps> = ({
               />
             </div>
           </div>
+        </div>
+      )}
+
+      {activeSubSection === 'contact' && (
+        <div className="grid gap-3">
+          {(['emailLabel', 'copyEmail', 'copied', 'locationLabel', 'locationValue', 'instagramLabel',
+            'note', 'nameField', 'namePlaceholder', 'phoneField', 'phonePlaceholder', 'emailField',
+            'emailPlaceholder', 'messageField', 'messagePlaceholder', 'sendButton', 'sendingButton'] as const).map(field => (
+            <label key={field} className="grid gap-1 text-xs">
+              <span>{defaultSiteContent.contact[field][currentLang] || field} ({editLang.toUpperCase()})</span>
+              <textarea rows={2} className="rounded border p-2" value={content.contact[field][editLang]}
+                onChange={event => {
+                  const value = event.target.value;
+                  setContent(prev => ({ ...prev, contact: { ...prev.contact,
+                    [field]: { ...prev.contact[field], [editLang]: value } } }));
+                }} />
+            </label>
+          ))}
+          <label className="grid gap-1 text-xs">
+            {t('連絡先の補足（1行ずつ）','문의 하단 안내 (한 줄씩)','Contact notes (one per line)')}
+            <textarea value={content.contact.statements[editLang].join('\n')} rows={3}
+              onChange={event => {
+                const lines = event.target.value.split('\n');
+                setContent(prev => ({ ...prev, contact: { ...prev.contact,
+                  statements: { ...prev.contact.statements, [editLang]: lines } } }));
+              }} />
+          </label>
         </div>
       )}
 

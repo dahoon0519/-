@@ -1,3 +1,4 @@
+import { PageLabel, usePageCopy } from './PageCopy';
 import { uploadPortfolioMedia } from '../utils/mediaUpload';
 import React, { useState } from 'react';
 import { Language, CafeVisit, isVideoMedia, CoffeeSectionContent, LatteArtPhoto } from '../types';
@@ -43,6 +44,7 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
   onUpdateCoffeeText,
   onOpenPhoto,
 }) => {
+  const copy = usePageCopy(currentLang);
   const [isVisitModalOpen, setIsVisitModalOpen] = useState(false);
   const [visitToEdit, setVisitToEdit] = useState<CafeVisit | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -108,7 +110,7 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
         <div className="mb-14 sm:mb-18 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div>
             <p className="text-xs tracking-[0.2em] text-[#8F887C] uppercase font-sans-jp mb-2">
-              Coffee
+              <PageLabel name="coffee.eyebrow" lang={currentLang} />
             </p>
             <EditableText
               isEditMode={isEditMode}
@@ -209,7 +211,7 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
                 ))}
               </div>
               {coffeeContent.espresso.note && (
-                <p className="text-[11px] text-[#938C82] italic mt-1 leading-relaxed">
+                <p className="text-[11px] text-[#938C82] mt-1 leading-relaxed">
                   {coffeeContent.espresso.note}
                 </p>
               )}
@@ -386,11 +388,7 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
                 <div className="flex flex-col items-center justify-center p-8 border border-[#E8E2D8] rounded-md bg-[#FAF8F5] text-center">
                   <Coffee className="w-6 h-6 text-[#8A8377] mb-2 opacity-60" />
                   <span className="text-xs text-[#6B645A]">
-                    {currentLang === 'ja'
-                      ? 'ハンドドリップ抽出・レシピ探求'
-                      : currentLang === 'ko'
-                      ? '핸드드립 추출 및 레시피 탐구'
-                      : 'Hand Drip Pour-Over Craft'}
+                    {copy('coffee.handDripPourOverCraft')}
                   </span>
                 </div>
               )}
@@ -446,12 +444,8 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
           </div>
 
           {cafeVisits.length === 0 ? (
-            <p className="text-xs text-[#8A847A] py-6 text-center italic border-t border-[#ECE5DA]">
-              {currentLang === 'ja'
-                ? '訪問した店舗の記録を追加できます。'
-                : currentLang === 'ko'
-                ? '방문한 카페의 기록을 등록할 수 있습니다.'
-                : 'No cafe visits recorded yet.'}
+            <p className="text-xs text-[#8A847A] py-6 text-center border-t border-[#ECE5DA]">
+              {copy('coffee.noCafeVisitsRecordedYet')}
             </p>
           ) : (
             <div className="border-t border-[#ECE5DA]">
@@ -487,7 +481,7 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
                         <div
                           role={onOpenPhoto ? 'button' : undefined}
                           tabIndex={onOpenPhoto ? 0 : undefined}
-                          aria-label={onOpenPhoto ? (currentLang === 'ja' ? `${displayName}を開く` : currentLang === 'ko' ? `${displayName} 열기` : `Open ${displayName}`) : undefined}
+                          aria-label={onOpenPhoto ? (copy('coffee.openMedia').replaceAll('{title}', () => displayName)) : undefined}
                           onClick={handleOpenVisitPhoto}
                           onKeyDown={(event) => {
                             if (onOpenPhoto && visit.imageUrl && (event.key === 'Enter' || event.key === ' ')) {
@@ -608,25 +602,25 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
                           <div className="flex flex-wrap gap-1.5 my-2">
                             {displayOrigin && (
                               <span className="text-[10px] text-[#635B50] bg-[#EBE5DB] px-2 py-0.5 rounded font-mono">
-                                {currentLang === 'ja' ? '産地: ' : currentLang === 'ko' ? '산지: ' : 'Origin: '}
+                                {copy('coffee.origin')}
                                 {displayOrigin}
                               </span>
                             )}
                             {displayVariety && (
                               <span className="text-[10px] text-[#635B50] bg-[#EBE5DB] px-2 py-0.5 rounded font-mono">
-                                {currentLang === 'ja' ? '品種: ' : currentLang === 'ko' ? '품종: ' : 'Variety: '}
+                                {copy('coffee.variety')}
                                 {displayVariety}
                               </span>
                             )}
                             {displayProcessing && (
                               <span className="text-[10px] text-[#635B50] bg-[#EBE5DB] px-2 py-0.5 rounded font-mono">
-                                {currentLang === 'ja' ? '精製: ' : currentLang === 'ko' ? '가공: ' : 'Process: '}
+                                {copy('coffee.process')}
                                 {displayProcessing}
                               </span>
                             )}
                             {displayBrewing && (
                               <span className="text-[10px] text-[#635B50] bg-[#EBE5DB] px-2 py-0.5 rounded font-mono">
-                                {currentLang === 'ja' ? '抽出: ' : currentLang === 'ko' ? '추출: ' : 'Brew: '}
+                                {copy('coffee.brew')}
                                 {displayBrewing}
                               </span>
                             )}
@@ -635,14 +629,14 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
 
                         {/* Tasting Notes */}
                         {displayNotes && (
-                          <p className="text-xs text-[#524C44] leading-relaxed mb-1">
+                          <p className="text-base whitespace-pre-line text-[#524C44] leading-[1.85] mb-1">
                             {displayNotes}
                           </p>
                         )}
 
                         {/* Personal Impressions */}
                         {displayImpressions && (
-                          <p className="text-xs text-[#7A7266] italic leading-relaxed pt-1 border-t border-[#F0EBE2]">
+                          <p className="text-base whitespace-pre-line text-[#625A50] leading-[1.85] pt-1 border-t border-[#F0EBE2]">
                             {displayImpressions}
                           </p>
                         )}
@@ -653,13 +647,13 @@ export const CoffeeSection: React.FC<CoffeeSectionProps> = ({
               })}
               </div>
               {pageCount > 1 && (
-                <nav aria-label={currentLang === 'ja' ? 'カフェ訪問記録のページ' : currentLang === 'ko' ? '카페 방문 기록 페이지' : 'Cafe visit pages'} className="flex items-center justify-center gap-3 pt-5 text-xs">
+                <nav aria-label={copy('coffee.cafeVisitPages')} className="flex items-center justify-center gap-3 pt-5 text-xs">
                   <button type="button" onClick={() => setVisitPage(currentVisitPage - 1)} disabled={currentVisitPage === 0} className="rounded border border-[#DDD5C9] px-3 py-2 disabled:opacity-40">
-                    {currentLang === 'ja' ? '前へ' : currentLang === 'ko' ? '이전' : 'Previous'}
+                    {copy('coffee.previous')}
                   </button>
                   <span aria-live="polite">{currentVisitPage + 1} / {pageCount}</span>
                   <button type="button" onClick={() => setVisitPage(currentVisitPage + 1)} disabled={currentVisitPage >= pageCount - 1} className="rounded border border-[#DDD5C9] px-3 py-2 disabled:opacity-40">
-                    {currentLang === 'ja' ? '次へ' : currentLang === 'ko' ? '다음' : 'Next'}
+                    {copy('coffee.next')}
                   </button>
                 </nav>
               )}

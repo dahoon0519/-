@@ -1,3 +1,4 @@
+import { usePageCopy } from './PageCopy';
 import React, { useEffect } from 'react';
 import { LatteArtPhoto, Language } from '../types';
 import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
@@ -19,6 +20,16 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   onClose,
   onSelectPhoto,
 }) => {
+  const copy = usePageCopy(currentLang);
+  const dialog = React.useRef<HTMLDialogElement>(null);
+  const open = !!photo;
+  useEffect(() => {
+    const el = dialog.current;
+    if (!el || !open) return;
+    const trigger = document.activeElement as HTMLElement | null;
+    el.showModal();
+    return () => { el.close(); trigger?.focus({ preventScroll: true }); };
+  }, [open]);
   const [isZoomed, setIsZoomed] = React.useState(false);
 
   useEffect(() => {
@@ -28,7 +39,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!photo) return;
-      if (e.key === 'Escape') onClose();
+      if (photos.length < 2 || (e.target instanceof HTMLVideoElement)) return;
       if (e.key === 'ArrowLeft') handlePrev();
       if (e.key === 'ArrowRight') handleNext();
     };
@@ -58,8 +69,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-[#121110]/92 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6"
+    <dialog ref={dialog} aria-label={title} onCancel={e => { e.preventDefault(); onClose(); }}
+      className="m-0 w-screen h-dvh max-w-none max-h-none fixed inset-0 z-50 bg-[#121110]/92 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6"
       onClick={onClose}
     >
       {/* Top Bar */}
@@ -84,16 +95,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             className="p-2 text-[#D2CBC1] hover:text-white rounded hover:bg-white/10 transition-colors cursor-pointer"
             title={
               isZoomed
-                ? currentLang === 'ja'
-                  ? '縮小'
-                  : currentLang === 'ko'
-                  ? '축소'
-                  : 'Zoom Out'
-                : currentLang === 'ja'
-                ? '拡大'
-                : currentLang === 'ko'
-                ? '확대'
-                : 'Zoom In'
+                ? copy('viewer.zoomOut')
+                : copy('viewer.zoomIn')
             }
           >
             {isZoomed ? <ZoomOut className="w-5 h-5" /> : <ZoomIn className="w-5 h-5" />}
@@ -102,11 +105,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             onClick={onClose}
             className="p-2 text-[#D2CBC1] hover:text-white rounded hover:bg-white/10 transition-colors cursor-pointer"
             title={
-              currentLang === 'ja'
-                ? '閉じる (Esc)'
-                : currentLang === 'ko'
-                ? '닫기 (Esc)'
-                : 'Close (Esc)'
+              copy('viewer.closeEsc')
             }
           >
             <X className="w-5 h-5" />
@@ -125,11 +124,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             onClick={handlePrev}
             className="absolute left-2 sm:left-6 z-10 p-2.5 rounded-full bg-black/40 hover:bg-black/70 text-white transition-colors cursor-pointer"
             aria-label={
-              currentLang === 'ja'
-                ? '前の画像'
-                : currentLang === 'ko'
-                ? '이전 이미지'
-                : 'Previous image'
+              copy('viewer.previousImage')
             }
           >
             <ChevronLeft className="w-6 h-6" />
@@ -167,11 +162,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             onClick={handleNext}
             className="absolute right-2 sm:right-6 z-10 p-2.5 rounded-full bg-black/40 hover:bg-black/70 text-white transition-colors cursor-pointer"
             aria-label={
-              currentLang === 'ja'
-                ? '次の画像'
-                : currentLang === 'ko'
-                ? '다음 이미지'
-                : 'Next image'
+              copy('viewer.nextImage')
             }
           >
             <ChevronRight className="w-6 h-6" />
@@ -194,6 +185,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           </span>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 };

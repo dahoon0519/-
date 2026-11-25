@@ -1158,6 +1158,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                             <input id={`hero-type-${lang}`} type="text" value={heroCaption(heroPhoto, lang).type}
                               onChange={(e) => onUpdateHeroPhoto({ ...heroPhoto, typeI18n: { ...heroPhoto.typeI18n, [lang]: e.target.value } })}
                               className="w-full px-2.5 py-1.5 border border-[#DDD6CB] rounded text-xs bg-[#FAF8F5] text-[#222]" />
+                            <label htmlFor={`hero-description-${lang}`}>{t('説明', '설명', 'Description')} ({lang.toUpperCase()})</label>
+                            <textarea id={`hero-description-${lang}`} value={heroCaption(heroPhoto, lang).description}
+                              onChange={e => onUpdateHeroPhoto({ ...heroPhoto, descriptionI18n: { ...heroPhoto.descriptionI18n, [lang]: e.target.value } })}
+                              className="w-full rounded border p-2 text-xs" />
                           </div>
                         ))}
                       </div>

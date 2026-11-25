@@ -94,6 +94,7 @@ try {
 
 
   const initial = {
+    pageCopy: { 'coffee.eyebrow': { ko: '새 커피 제목', ja: '抽出の記録' }, 'footer.copyright': { en: '© {year} {name}' } },
     heroPhoto: {
       imageUrl: 'https://res.cloudinary.com/test/video/upload/v123/dahoon-portfolio/sample.mp4',
       mediaType: 'video',
@@ -121,6 +122,7 @@ try {
   res = await request('GET', '/api/content/draft');
   assert.equal(res.status, 200);
   assert.equal(res.data.draft.heroPhoto.mediaType, 'video');
+  assert.deepEqual(res.data.draft.pageCopy, initial.pageCopy);
   pass('Draft remains available after application server restart');
 
   res = await request('POST', '/api/content/publish', { content: res.data.draft, summary: 'Local integration test publish' });
@@ -130,6 +132,7 @@ try {
   res = await request('GET', '/api/content/published');
   assert.equal(res.status, 200);
   assert.equal(res.data.published.heroPhoto.mediaType, 'video');
+  assert.deepEqual(res.data.published.pageCopy, initial.pageCopy);
   assert.deepEqual(res.data.published.cafeVisits, initial.cafeVisits);
   assert.deepEqual(res.data.published.lattePhotos, initial.lattePhotos);
   assert.deepEqual(res.data.published.foodPhotos, initial.foodPhotos);

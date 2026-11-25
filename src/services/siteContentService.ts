@@ -249,6 +249,13 @@ export async function loadDraftContent(): Promise<SiteContent | null> {
  * Saves draft content. Enforces administrator authorization and input validation on server.
  * Does NOT affect the public visitors' view.
  */
+async function verifySavedVersion(kind: 'draft' | 'published', expectedTime: string): Promise<SiteContent> {
+  const data = await apiClient.request<Partial<Record<typeof kind, SiteContent>>>(`/api/content/${kind}`, { cache: 'no-store' });
+  const saved = data[kind];
+  if (!expectedTime || saved?.updatedAt !== expectedTime) throw new Error('Saved version could not be confirmed');
+  return saved;
+}
+
 export async function saveDraftContent(content: SiteContent): Promise<SiteContent> {
   if (!authService.isAuthorizedAdmin()) {
     throw new Error(`권한 오류: 관리자(${authService.getAllowedAdminEmail()})만 임시저장할 수 있습니다.`);
@@ -265,17 +272,21 @@ export async function saveDraftContent(content: SiteContent): Promise<SiteConten
   };
 
   // 1. Submit to server-authoritative endpoint
+  let savedTime: string;
   try {
-    await apiClient.post('/api/content/draft', { content: draft });
+    const receipt = await apiClient.post<{ draft: SiteContent }>('/api/content/draft', { content: draft });
+    savedTime = receipt.draft.updatedAt;
   } catch (err: any) {
     console.error('Server draft save failed:', err);
     throw new Error(`임시저장 서버 동기화 실패: ${err.message || '영구 스토리지 저장에 실패했습니다.'}`);
   }
 
+  Object.assign(draft, await verifySavedVersion('draft', savedTime));
+
   // 2. Cache in local storage for offline safety
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-    localStorage.setItem('dahoon_last_draft_time', new Date().toISOString());
+    localStorage.setItem('dahoon_last_draft_time', draft.updatedAt);
   } catch (e) {
     console.error('Error saving draft locally:', e);
   }
@@ -322,17 +333,21 @@ export async function publishContent(content: SiteContent, summary?: string): Pr
   };
 
   // 1. Publish to backend server (must succeed for persistent storage)
+  let savedTime: string;
   try {
-    await apiClient.post('/api/content/publish', { content: published, summary });
+    const receipt = await apiClient.post<{ version: { timestamp: string } }>('/api/content/publish', { content: published, summary });
+    savedTime = receipt.version.timestamp;
   } catch (err: any) {
     console.error('Server publish failed:', err);
     throw new Error(`게시 서버 저장 실패: ${err.message || '영구 스토리지에 저장하지 못했습니다.'}`);
   }
 
+  Object.assign(published, await verifySavedVersion('published', savedTime));
+
   // 2. Mirror into local storage cache
   try {
     localStorage.setItem(PUBLISHED_KEY, JSON.stringify(published));
-    localStorage.setItem('dahoon_last_publish_time', now);
+    localStorage.setItem('dahoon_last_publish_time', published.updatedAt);
     localStorage.removeItem(DRAFT_KEY);
     localStorage.removeItem('dahoon_last_draft_time');
 

@@ -1,3 +1,4 @@
+import { PageLabel, usePageCopy } from './PageCopy';
 import React from 'react';
 import { Language, SiteContent } from '../types';
 import { translations } from '../i18n/translations';
@@ -16,6 +17,7 @@ export const ValuesSection: React.FC<ValuesSectionProps> = ({
   isEditMode = false,
   onUpdateValuesText,
 }) => {
+  const copy = usePageCopy(currentLang);
   const t = translations[currentLang];
 
   const title = siteValues?.title[currentLang] || t.values.title;
@@ -29,7 +31,7 @@ export const ValuesSection: React.FC<ValuesSectionProps> = ({
         {/* Header */}
         <div className="mb-14 sm:mb-18">
           <p className="text-xs tracking-[0.2em] text-[#8F887C] uppercase font-sans-jp mb-2">
-            Values & Mindset
+            <PageLabel name="values.eyebrow" lang={currentLang} />
           </p>
           <EditableText
             isEditMode={isEditMode}

@@ -1,3 +1,4 @@
+import { PageLabel, usePageCopy } from './PageCopy';
 import React, { useEffect, useRef, useState } from 'react';
 import { Language, ProfileInfo, SiteContent } from '../types';
 import {
@@ -31,6 +32,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   isEditMode = false,
   onUpdateContactText,
 }) => {
+  const copy = usePageCopy(currentLang);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -89,22 +91,14 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
 
     if (!trimmedName || !trimmedEmail || !trimmedMessage) {
       setSubmitError(
-        currentLang === 'ja'
-          ? 'お名前、メールアドレス、お問い合わせ内容をご入力ください。'
-          : currentLang === 'ko'
-          ? '이름, 이메일 주소, 문의 내용을 입력해 주세요.'
-          : 'Please fill in your name, email address, and message.'
+        copy('contact.pleaseFillInYourNameEmail')
       );
       return;
     }
 
     if (trimmedName.length > 80) {
       setSubmitError(
-        currentLang === 'ja'
-          ? 'お名前は80文字以内でご入力ください。'
-          : currentLang === 'ko'
-          ? '이름은 80자 이내로 입력해 주세요.'
-          : 'Name must not exceed 80 characters.'
+        copy('contact.nameMustNotExceed80Characters')
       );
       return;
     }
@@ -112,33 +106,21 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmedEmail)) {
       setSubmitError(
-        currentLang === 'ja'
-          ? '正しいメールアドレス形式を入力してください。'
-          : currentLang === 'ko'
-          ? '올바른 이메일 주소를 입력해 주세요.'
-          : 'Please enter a valid email address.'
+        copy('contact.pleaseEnterAValidEmailAddress')
       );
       return;
     }
 
     if (trimmedPhone.length > 30) {
       setSubmitError(
-        currentLang === 'ja'
-          ? '電話番号は30文字以内でご入力ください。'
-          : currentLang === 'ko'
-          ? '전화번호는 30자 이내로 입력해 주세요.'
-          : 'Phone number must not exceed 30 characters.'
+        copy('contact.phoneNumberMustNotExceed30')
       );
       return;
     }
 
     if (trimmedMessage.length > 2000) {
       setSubmitError(
-        currentLang === 'ja'
-          ? 'お問い合わせ内容は2,000文字以内でご入力ください。'
-          : currentLang === 'ko'
-          ? '문의 내용은 2,000자 이내로 입력해 주세요.'
-          : 'Message must not exceed 2,000 characters.'
+        copy('contact.messageMustNotExceed2000')
       );
       return;
     }
@@ -166,11 +148,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
     } catch (err: any) {
       console.error('Contact inquiry submission failed:', err);
       const fallbackMsg =
-        currentLang === 'ja'
-          ? 'お問い合わせの送信に失敗しました。時間をおいて再度お試しいただくか、直接メールでご連絡ください。'
-          : currentLang === 'ko'
-          ? '문의 접수에 실패했습니다. 잠시 후 다시 시도해 주시거나 아래 이메일로 직접 연락해 주세요.'
-          : 'Failed to submit inquiry. Please try again later or contact directly via email.';
+        copy('contact.failedToSubmitInquiryPleaseTry');
       setSubmitError(err?.message || fallbackMsg);
     } finally {
       setIsSubmitting(false);
@@ -195,7 +173,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
         {/* Header */}
         <div className="text-center mb-12 sm:mb-16">
           <p className="text-xs tracking-[0.25em] text-[#8F887C] uppercase font-sans-jp mb-2">
-            Contact & Inquiries
+            <PageLabel name="contact.eyebrow" lang={currentLang} />
           </p>
           <EditableText
             isEditMode={isEditMode}
@@ -287,11 +265,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                   </div>
                   {copyError && (
                     <p role="status" className="mt-2 text-xs text-[#8A3B32]">
-                      {currentLang === 'ja'
-                        ? 'コピーできませんでした。メールアドレスを選択してコピーしてください。'
-                        : currentLang === 'ko'
-                        ? '복사하지 못했어요. 이메일 주소를 직접 선택해 복사해 주세요.'
-                        : 'Could not copy. Please select and copy the email address.'}
+                      {copy('contact.couldNotCopyPleaseSelectAnd')}
                     </p>
                   )}
                 </div>
@@ -373,34 +347,20 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                   <div>
                     <h4 className="text-lg font-serif-jp text-[#1F1E1D] font-medium">
                       {emailSent
-                        ? currentLang === 'ja'
-                          ? 'お問い合わせを受け付けました'
-                          : currentLang === 'ko'
-                          ? '문의가 안전하게 접수되었습니다'
-                          : 'Inquiry Submitted Successfully'
-                        : currentLang === 'ja'
-                        ? 'お問い合わせを保存しました'
-                        : currentLang === 'ko'
-                        ? '문의가 안전하게 저장되었습니다'
-                        : 'Inquiry Saved Successfully'}
+                        ? copy('contact.inquirySubmittedSuccessfully')
+                        : copy('contact.inquirySavedSuccessfully')}
                     </h4>
                     <p className="text-xs text-[#635B50] mt-1.5 max-w-md mx-auto leading-relaxed">
                       {emailSent
-                        ? currentLang === 'ja'
-                          ? `お問い合わせ内容が安全に保存され、管理者（${lastSentEmail || targetEmail}）へメール通知が送信されました。内容を確認のうえ、折り返しご連絡いたします。`
-                          : currentLang === 'ko'
-                          ? `문의 내용이 안전하게 저장되고 관리자(${lastSentEmail || targetEmail})에게 이메일 알림이 정상 발송되었습니다. 확인 후 신속히 회신드리겠습니다.`
-                          : `Your inquiry has been safely saved and an email notification was sent to the administrator (${lastSentEmail || targetEmail}). We will get back to you shortly.`
-                        : currentLang === 'ja'
-                        ? `お問い合わせ内容はシステム内に安全に保存されました。現在メール即時通知は保留中（または未設定）ですが、管理画面にてメッセージを確実に確認できます。お急ぎの場合は ${lastSentEmail || targetEmail} まで直接ご連絡ください。`
-                        : currentLang === 'ko'
-                        ? `문의 내용이 안전하게 영구 저장되었습니다. 현재 실시간 이메일 전송은 대기(미설정) 상태이나, 관리자가 관리자 화면에서 문의를 확인할 수 있습니다. 급한 용무는 ${lastSentEmail || targetEmail} 로 직접 문의해 주세요.`
-                        : `Your inquiry has been safely saved. Email notification is currently pending or not configured, but the administrator can review your message in the dashboard. For urgent matters, please contact ${lastSentEmail || targetEmail} directly.`}
+                        ? copy('contact.notificationAccepted').replaceAll('{email}', () => lastSentEmail || targetEmail)
+                        : notificationStatus === 'failed'
+                        ? copy('contact.notificationFailed')
+                        : copy('contact.notificationUnavailable').replaceAll('{email}', () => lastSentEmail || targetEmail)}
                     </p>
                     <p className={`text-[11px] font-mono mt-1 ${emailSent ? 'text-[#8C8477]' : 'text-[#8C6D4F]'}`}>
                       {emailSent
-                        ? (currentLang === 'ja' ? '通知先: ' : currentLang === 'ko' ? '알림 수신처: ' : 'Notification sent to: ') + (lastSentEmail || targetEmail)
-                        : (currentLang === 'ja' ? '直接連絡先: ' : currentLang === 'ko' ? '직접 연락처: ' : 'Direct contact: ') + (lastSentEmail || targetEmail)}
+                        ? (copy('contact.notificationSentTo')) + (lastSentEmail || targetEmail)
+                        : (copy('contact.directContact')) + (lastSentEmail || targetEmail)}
                     </p>
                   </div>
                   <div className="pt-2 flex flex-col sm:flex-row gap-2 justify-center">
@@ -408,11 +368,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                       onClick={handleResetForm}
                       className="px-4 py-2 bg-[#634832] hover:bg-[#4E3827] text-white text-xs rounded font-medium cursor-pointer transition-colors"
                     >
-                      {currentLang === 'ja'
-                        ? '新しいメッセージを作成'
-                        : currentLang === 'ko'
-                        ? '새 문의 작성하기'
-                        : 'Write Another Message'}
+                      {copy('contact.writeAnotherMessage')}
                     </button>
                   </div>
                 </div>
@@ -437,7 +393,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                       <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
                       <div className="leading-relaxed">
                         <span className="font-semibold block mb-0.5">
-                          {currentLang === 'ja' ? '送信エラー' : currentLang === 'ko' ? '전송 오류' : 'Submission Error'}
+                          {copy('contact.submissionError')}
                         </span>
                         <span>{submitError}</span>
                       </div>

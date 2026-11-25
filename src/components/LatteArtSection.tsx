@@ -1,3 +1,4 @@
+import { PageLabel, usePageCopy } from './PageCopy';
 import React, { useState } from 'react';
 import { Language, LatteArtPhoto, isVideoMedia, SiteContent } from '../types';
 import { translations } from '../i18n/translations';
@@ -34,6 +35,7 @@ export const LatteArtSection: React.FC<LatteArtSectionProps> = ({
   isEditMode = false,
   onUpdateLatteArtField,
 }) => {
+  const copy = usePageCopy(currentLang);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [photoToEdit, setPhotoToEdit] = useState<LatteArtPhoto | null>(null);
@@ -101,7 +103,7 @@ export const LatteArtSection: React.FC<LatteArtSectionProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10 sm:mb-14">
           <div>
             <p className="text-xs tracking-[0.2em] text-[#8F887C] uppercase font-sans-jp mb-2">
-              Latte Art
+              <PageLabel name="latteArt.eyebrow" lang={currentLang} />
             </p>
             <EditableText
               isEditMode={isEditMode}
@@ -163,7 +165,7 @@ export const LatteArtSection: React.FC<LatteArtSectionProps> = ({
                 value={note}
                 onChange={(val) => onUpdateLatteArtField?.('note', val)}
                 as="p"
-                className="text-xs text-[#8A847A] italic block"
+                className="text-xs text-[#8A847A] block"
               />
             </div>
           )}
@@ -192,7 +194,7 @@ export const LatteArtSection: React.FC<LatteArtSectionProps> = ({
                   onClick={() => onOpenPhoto(item)}
                   role="button"
                   tabIndex={0}
-                  aria-label={currentLang === 'ja' ? `${displayTitle}を開く` : currentLang === 'ko' ? `${displayTitle} 열기` : `Open ${displayTitle}`}
+                  aria-label={copy('latteArt.openMedia').replaceAll('{title}', () => displayTitle)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
@@ -223,7 +225,7 @@ export const LatteArtSection: React.FC<LatteArtSectionProps> = ({
                   {isVideoMedia(item.imageUrl, item.mediaType) && (
                     <div className="absolute top-2 left-2 z-10 bg-black/60 backdrop-blur-xs text-white text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1 font-mono">
                       <Play className="w-2.5 h-2.5 fill-current" />
-                      <span>VIDEO</span>
+                      <span>{copy('latteArt.videoBadge')}</span>
                     </div>
                   )}
 
@@ -231,16 +233,8 @@ export const LatteArtSection: React.FC<LatteArtSectionProps> = ({
                     <Eye className="w-4 h-4" />
                     <span>
                       {isVideoMedia(item.imageUrl, item.mediaType)
-                        ? currentLang === 'ja'
-                          ? '再生'
-                          : currentLang === 'ko'
-                          ? '재생'
-                          : 'Play'
-                        : currentLang === 'ja'
-                        ? '拡大'
-                        : currentLang === 'ko'
-                        ? '확대'
-                        : 'View'}
+                        ? copy('latteArt.play')
+                        : copy('latteArt.view')}
                     </span>
                   </div>
                 </div>
@@ -292,16 +286,8 @@ export const LatteArtSection: React.FC<LatteArtSectionProps> = ({
                             aria-expanded={expandedIds.has(item.id)}
                           >
                             {expandedIds.has(item.id)
-                              ? currentLang === 'ja'
-                                ? '閉じる'
-                                : currentLang === 'ko'
-                                ? '접기'
-                                : 'Show less'
-                              : currentLang === 'ja'
-                              ? '続きを読む'
-                              : currentLang === 'ko'
-                              ? '더보기'
-                              : 'Read more'}
+                              ? copy('latteArt.showLess')
+                              : copy('latteArt.readMore')}
                           </button>
                         )}
                       </div>

@@ -1,3 +1,4 @@
+import { usePageCopy } from './PageCopy';
 import React, { useRef, useState } from 'react';
 import { Language, SiteCategoryItem } from '../types';
 import { Menu, X, Edit3 } from 'lucide-react';
@@ -27,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   isEditMode = false,
   onToggleEditMode,
 }) => {
+  const copy = usePageCopy(currentLang);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
 
@@ -103,7 +105,7 @@ export const Header: React.FC<HeaderProps> = ({
                   : 'hover:text-[#1F1E1D]'
               }`}
             >
-              日本語
+              {copy('header.japanese')}
             </button>
             <span className="text-[#C8C2B7] select-none">|</span>
             <button
@@ -114,7 +116,7 @@ export const Header: React.FC<HeaderProps> = ({
                   : 'hover:text-[#1F1E1D]'
               }`}
             >
-              한국어
+              {copy('header.korean')}
             </button>
             <span className="text-[#C8C2B7] select-none">|</span>
             <button
@@ -125,7 +127,7 @@ export const Header: React.FC<HeaderProps> = ({
                   : 'hover:text-[#1F1E1D]'
               }`}
             >
-              English
+              {copy('header.english')}
             </button>
           </div>
 
@@ -234,7 +236,7 @@ export const Header: React.FC<HeaderProps> = ({
                   currentLang === 'ja' ? 'bg-[#EDE7DD] text-[#1F1E1D] font-semibold' : ''
                 }`}
               >
-                日本語
+                {copy('header.japanese')}
               </button>
               <button
                 onClick={() => {
@@ -245,7 +247,7 @@ export const Header: React.FC<HeaderProps> = ({
                   currentLang === 'ko' ? 'bg-[#EDE7DD] text-[#1F1E1D] font-semibold' : ''
                 }`}
               >
-                한국어
+                {copy('header.korean')}
               </button>
               <button
                 onClick={() => {
@@ -256,7 +258,7 @@ export const Header: React.FC<HeaderProps> = ({
                   currentLang === 'en' ? 'bg-[#EDE7DD] text-[#1F1E1D] font-semibold' : ''
                 }`}
               >
-                English
+                {copy('header.english')}
               </button>
             </div>
 

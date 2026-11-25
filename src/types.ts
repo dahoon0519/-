@@ -117,6 +117,7 @@ export interface ProfileInfo {
 }
 
 export interface HeroPhotoInfo {
+  descriptionI18n?: Partial<Record<Language, string>>;
   imageUrl: string;
   title: string;
   type?: string;
@@ -149,6 +150,7 @@ export interface ContactInquiry {
 }
 
 export interface SiteContent {
+  pageCopy?: import('./data/pageCopy').PageCopyOverrides;
   version: string;
   updatedAt: string;
   categories: SiteCategoryItem[];
